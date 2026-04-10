@@ -1,0 +1,221 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+
+<!-- PNAgent.dtd                                                          -->
+<!-- Copyright (c) 2003 - 2010 Citrix Systems, Inc. All Rights Reserved.         -->
+
+<!-- ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++ -->
+<!--                   Root Element                                       -->
+<!-- ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++ -->
+
+<!--#DOCUMENTATION:Configuration Settings for the Desktop Portal Client-->
+<!ELEMENT PNAgent_Configuration (FolderDisplay? , DesktopIntegration? , ConfigurationFile? , Request , Failover?, Logon , UserInterface? , FileCleanup? , ICA_Options?)>
+<!ATTLIST PNAgent_Configuration xmlns:xsi CDATA #IMPLIED>
+
+
+<!-- ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++ -->
+<!--                   FolderDisplay                                      -->
+<!-- ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++ -->
+
+<!--#DOCUMENTATION:The location to display the program neighborhood folders.-->
+<!ELEMENT FolderDisplay (StartMenuDisplay? , DesktopDisplay? , SystemTrayMenuDisplay?)>
+
+<!--#DOCUMENTATION:Start Menu Folder Display properties-->
+<!ELEMENT StartMenuDisplay (Enabled , RootFolder?)>
+
+<!--#DOCUMENTATION:Enable or disable showing the folders in the Start Menu-->
+<!--It is also used in DesktopDisplay, SystemTrayMenuDisplay and Poll-->
+<!ELEMENT Enabled (#PCDATA)>
+<!ATTLIST Enabled forcedefault CDATA #IMPLIED modifiable CDATA #IMPLIED >
+
+<!--#DOCUMENTATION:Location in the start Menu to put the Folders-->
+<!ELEMENT RootFolder (#PCDATA)>
+<!--ATTLIST RootFolder modifiable CDATA #IMPLIED forcedefault CDATA #IMPLIED root (programs) #IMPLIED -->
+<!ATTLIST RootFolder forcedefault CDATA #IMPLIED modifiable CDATA #IMPLIED root CDATA #IMPLIED >
+
+
+<!--#DOCUMENTATION:Desktop Folder Display Properties-->
+<!ELEMENT DesktopDisplay (Enabled , Icon?)>
+
+<!--#DOCUMENTATION:Properties about the Desktop Folder-->
+<!ELEMENT Icon (Name? , Location?)>
+
+<!--#DOCUMENTATION:Name of the Folder that will contain the enumerated resources-->
+<!ELEMENT Name (#PCDATA)>
+<!ATTLIST Name forcedefault CDATA #IMPLIED modifiable CDATA #IMPLIED >
+
+<!--#DOCUMENTATION:Location of the Icon to use instead of the default-->
+<!--It is also used in ConfigurationFile, Enumeration and Resource-->
+<!ELEMENT Location (#PCDATA)>
+<!ATTLIST Location RedirectNow CDATA #IMPLIED replaceServerLocation CDATA #IMPLIED forcedefault CDATA #IMPLIED modifiable CDATA #IMPLIED >
+
+<!--#DOCUMENTATION:SystemTrayMenu Display properties-->
+<!ELEMENT SystemTrayMenuDisplay (Enabled)>
+
+
+<!-- ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++ -->
+<!--                    DesktopIntegration                                -->
+<!-- ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++ -->
+
+<!--#DOCUMENTATION:Desktop Integration Settings-->
+<!ELEMENT DesktopIntegration (StartMenu? , Desktop?)>
+
+<!--#DOCUMENTATION:Add Means to place a Icon in the Start Menu and the location specified by the Desktop Integration Setting; Ignore Means to only place the Icon in the Start Menu; Replace means to remove the Icon from the Start Menu and place in the start Menu at the specified location in the Desktop Integration Setting-->
+<!ELEMENT StartMenu (#PCDATA)>
+
+<!--#DOCUMENTATION:Add Means to place a Icon in the Desktop Folder and the Desktop; Ignore Means to only place the Icon in the Desktop Folder; Replace means to remove the Icon from the Desktop Folder  and place on the desktop-->
+<!ELEMENT Desktop (#PCDATA)>
+
+
+<!-- ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++ -->
+<!--                    ConfigurationFile                                 -->
+<!-- ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++ -->
+
+<!--#DOCUMENTATION:Configuration File information for the Desktop Portal-->
+<!ELEMENT ConfigurationFile (Location , Refresh?)>
+
+<!--#DOCUMENTATION:Options about how often and when to get Enumeration information-->
+<!--It is also used in Enumeration.-->
+<!ELEMENT Refresh (OnApplicationStart? , OnResourceRequest?, Poll?)>
+
+<!--#DOCUMENTATION:Make the enumeration request when the application first starts.-->
+<!ELEMENT OnApplicationStart (#PCDATA)>
+<!ATTLIST OnApplicationStart forcedefault CDATA #IMPLIED modifiable CDATA #IMPLIED >
+
+<!--#DOCUMENTATION:Make the enumeration request when a request for a resource was made.-->
+<!ELEMENT OnResourceRequest (#PCDATA)>
+<!ATTLIST OnResourceRequest forcedefault CDATA #IMPLIED modifiable CDATA #IMPLIED >
+
+<!--#DOCUMENTATION:Request on a periodic basis-->
+<!ELEMENT Poll (Enabled , Period)>
+<!ATTLIST Poll forcedefault CDATA #IMPLIED modifiable CDATA #IMPLIED >
+
+<!--#DOCUMENTATION:Set the period in hours to reload the configuration file-->
+<!ELEMENT Period (#PCDATA)>
+
+
+<!-- ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++ -->
+<!--                    Request                                           -->
+<!-- ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++ -->
+
+<!--#DOCUMENTATION:Resource Request information; Can either be a List or possible resource or the actual resource-->
+<!ELEMENT Request (Enumeration , Resource)>
+
+<!--#DOCUMENTATION:Information about request for the List of possible resources -->
+<!ELEMENT Enumeration (Location , Smartcard_Location? , Refresh?)>
+
+<!--#DOCUMENTATION:The URL of the location to send the enumeration request this will be used when logging on with smartcard-->
+<!ELEMENT Smartcard_Location (#PCDATA)>
+<!ATTLIST Smartcard_Location replaceServerLocation CDATA #IMPLIED >
+
+<!--#DOCUMENTATION:Request for a resource that was on the list from the enumeration request-->
+<!ELEMENT Resource (Location , Smartcard_Location?)>
+
+<!-- ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++ -->
+<!--                    Failover                                           -->
+<!-- ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++ -->
+
+<!--#DOCUMENTATION:Failover information; Can be a list of backup site paths with up to 5 entries -->
+<!ELEMENT Failover (Location?)>
+
+<!-- ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++ -->
+<!--                    Logon                                             -->
+<!-- ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++ -->
+
+<!--#DOCUMENTATION:This setting will affect the Logon Method and the modifiable attribute on the Logon Element-->
+<!ELEMENT Logon (LogonMethod+ , EnableSavePassword? , SupportNDS , NDS_Settings? , CaptureSmartCardPin?)>
+<!ATTLIST Logon forcedefault CDATA #IMPLIED modifiable CDATA #IMPLIED >
+
+<!--#DOCUMENTATION:Options about logon methods-->
+<!ELEMENT LogonMethod (#PCDATA)>
+
+<!--#DOCUMENTATION:This option will allow the user the option of saving their credentials.-->
+<!ELEMENT EnableSavePassword (#PCDATA)>
+
+<!ELEMENT SupportNDS (#PCDATA)>
+
+<!ELEMENT NDS_Settings (DefaultTree)>
+
+<!ELEMENT DefaultTree (#PCDATA)>
+
+<!ELEMENT CaptureSmartCardPin (#PCDATA)>
+
+
+<!-- ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++ -->
+<!--                    UserInterface                                     -->
+<!-- ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++ -->
+
+<!--#DOCUMENTATION:Options to hide or display certain groups of options presented to the user. Options will be displayed if the value is true, they will be hidden if the value is false.-->
+<!ELEMENT UserInterface (ServerSettings? , FolderDisplaySettings? , RefreshSettings?)>
+<!ATTLIST UserInterface application_mode CDATA  #IMPLIED >
+
+<!--#DOCUMENTATION:This option shows/hides Server settings. Which include server location and log on method.-->
+<!ELEMENT ServerSettings (#PCDATA)>
+
+<!--#DOCUMENTATION:This option shows/hides the Folder display settings. This setting includes the options about where to display the folders.-->
+<!ELEMENT FolderDisplaySettings (#PCDATA)>
+
+<!--#DOCUMENTATION:This option shows/hides the Refresh Settings for enumeration. This setting includes the options under Enumeration\Refresh.-->
+<!ELEMENT RefreshSettings (#PCDATA)>
+
+
+<!-- ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++ -->
+<!--                    FileCleanup                                -->
+<!-- ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++ -->
+
+<!--#DOCUMENTATION:These settings describe when to do file clean up.-->
+<!ELEMENT FileCleanup (Logoff? , Exit? , RefreshApp?)>
+
+<!--#DOCUMENTATION:Cleanup when the users logs off-->
+<!ELEMENT Logoff (#PCDATA)>
+
+<!--#DOCUMENTATION:Cleanup when the application exits-->
+<!ELEMENT Exit (#PCDATA)>
+
+<!--#DOCUMENTATION:Only Cleanup shortcuts to unavailable applications. The directoryDepth attribute sets the deletion depth.-->
+<!ELEMENT RefreshApp (#PCDATA)>
+<!ATTLIST RefreshApp directoryDepth CDATA #IMPLIED>
+
+
+<!-- ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++ -->
+<!--                    ICA_Optoins                                       -->
+<!-- ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++ -->
+
+<!--#DOCUMENTATION:Options for ICA File Settings.  This Data can be used in two directions from Server to Client and from Client to Server.  When the Server sends information down to the client the Value options represent the Default values.  When the client sends the data to the server the Value options represent the requested values for the option.-->
+<!ELEMENT ICA_Options (DisplaySize?, ColorDepth?, Audio?, ICA_TemplateFile?, TransparentKeyPassthrough?)>
+<!ATTLIST ICA_Options application_mode CDATA #IMPLIED >
+
+<!--#DOCUMENTATION:This is the Window Size options.  If this entry is missing the Default published Display Size is used.-->
+<!ELEMENT DisplaySize (Value? , Options?)>
+
+<!--#DOCUMENTATION:This entry is used by the client to send the desired option to the Server.-->
+<!ELEMENT Value ANY>
+
+<!--#DOCUMENTATION:This entry is used by the server to specify to the client which Color Depth options for the display are availble.-->
+<!ELEMENT Options ANY>
+
+<!--#DOCUMENTATION:This is the percent of the client desktop the session should take up.-->
+<!ELEMENT Percent (#PCDATA)>
+
+<!--#DOCUMENTATION:This is the Dimension of the connection-->
+<!ELEMENT Dimension (Width , Height)>
+
+<!--#DOCUMENTATION:The width of the desired connection-->
+<!ELEMENT Width (#PCDATA)>
+
+<!--#DOCUMENTATION:The Height of the desired conneciton-->
+<!ELEMENT Height (#PCDATA)>
+
+<!--#DOCUMENTATION:This is the desired mode of display.-->
+<!ELEMENT Mode (#PCDATA)>
+
+<!--#DOCUMENTATION:This entry is for defining Color Depth. Possible values for this are -->
+<!ELEMENT ColorDepth (Value? , Options*)>
+
+<!--#DOCUMENTATION:This entry is used to define the Audio Quality of the ICA Session.-->
+<!ELEMENT Audio (Value? , Options*)>
+
+<!--#DOCUMENTATION:This entry is used to specify which Template file should be used to select options for the ICA connection-->
+<!ELEMENT ICA_TemplateFile (#PCDATA)>
+
+<!--#DOCUMENTATION:This entry is used to define the Windows Key combination passthrough mode of the ICA Session.-->
+<!ELEMENT TransparentKeyPassthrough (Value? , Options*)>

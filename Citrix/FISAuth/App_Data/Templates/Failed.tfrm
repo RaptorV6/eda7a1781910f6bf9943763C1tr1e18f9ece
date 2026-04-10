@@ -1,0 +1,5 @@
+﻿<?xml version="1.0" encoding="UTF-8"?>
+<AuthenticateResponse xmlns="http://citrix.com/authentication/response/1">
+@* ©2014 Citrix Systems, Inc.   All rights reserved. *@
+@ControlHeaders(status: GetValue("ClientStatus"), result: GetValue("ClientResult"), stateContext: GetValue("StateContext"), logMessageKey: GetValue("LogMessageValueKey"))
+</AuthenticateResponse>

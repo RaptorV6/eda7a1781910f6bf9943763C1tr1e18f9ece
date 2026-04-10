@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg width="24px" height="24px" viewBox="0 0 24 24" version="1.1" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink">
+    <!-- Generator: Sketch 48.2 (47327) - http://www.bohemiancoding.com/sketch -->
+    <title>01 - Icons/Toasts/24/Info</title>
+    <desc>Created with Sketch.</desc>
+    <defs></defs>
+    <g id="Symbols" stroke="none" stroke-width="1" fill="none" fill-rule="evenodd">
+        <g id="01---Icons/Toasts/24/Info" fill="#0045DB">
+            <path d="M12,1 C18.075,1 23,5.925 23,12 C23,18.075 18.075,23 12,23 C5.925,23 1,18.075 1,12 C1,5.925 5.925,1 12,1 Z M12,22 C17.5144444,22 22,17.5144444 22,12 C22,6.48555556 17.5144444,2 12,2 C6.48555556,2 2,6.48555556 2,12 C2,17.5144444 6.48555556,22 12,22 Z M11.5,10.5004358 C11.5,10.2240528 11.7319336,10 12,10 C12.2761424,10 12.5,10.2307968 12.5,10.5004358 L12.5,17.4995642 C12.5,17.7759472 12.2680664,18 12,18 C11.7238576,18 11.5,17.7692032 11.5,17.4995642 L11.5,10.5004358 Z M12.75,8 C12.75,8.414 12.414,8.75 12,8.75 C11.586,8.75 11.25,8.414 11.25,8 C11.25,7.586 11.586,7.25 12,7.25 C12.414,7.25 12.75,7.586 12.75,8 Z" id="View-Info"></path>
+        </g>
+    </g>
+</svg>

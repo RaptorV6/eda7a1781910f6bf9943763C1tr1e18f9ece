@@ -1,0 +1,198 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<root>
+  <!-- 
+    Microsoft ResX Schema 
+    
+    Version 2.0
+    
+    The primary goals of this format is to allow a simple XML format 
+    that is mostly human readable. The generation and parsing of the 
+    various data types are done through the TypeConverter classes 
+    associated with the data types.
+    
+    Example:
+    
+    ... ado.net/XML headers & schema ...
+    <resheader name="resmimetype">text/microsoft-resx</resheader>
+    <resheader name="version">2.0</resheader>
+    <resheader name="reader">System.Resources.ResXResourceReader, System.Windows.Forms, ...</resheader>
+    <resheader name="writer">System.Resources.ResXResourceWriter, System.Windows.Forms, ...</resheader>
+    <data name="Name1"><value>this is my long string</value><comment>this is a comment</comment></data>
+    <data name="Color1" type="System.Drawing.Color, System.Drawing">Blue</data>
+    <data name="Bitmap1" mimetype="application/x-microsoft.net.object.binary.base64">
+        <value>[base64 mime encoded serialized .NET Framework object]</value>
+    </data>
+    <data name="Icon1" type="System.Drawing.Icon, System.Drawing" mimetype="application/x-microsoft.net.object.bytearray.base64">
+        <value>[base64 mime encoded string representing a byte array form of the .NET Framework object]</value>
+        <comment>This is a comment</comment>
+    </data>
+                
+    There are any number of "resheader" rows that contain simple 
+    name/value pairs.
+    
+    Each data row contains a name, and value. The row also contains a 
+    type or mimetype. Type corresponds to a .NET class that support 
+    text/value conversion through the TypeConverter architecture. 
+    Classes that don't support this are serialized and stored with the 
+    mimetype set.
+    
+    The mimetype is used for serialized objects, and tells the 
+    ResXResourceReader how to depersist the object. This is currently not 
+    extensible. For a given mimetype the value must be set accordingly:
+    
+    Note - application/x-microsoft.net.object.binary.base64 is the format 
+    that the ResXResourceWriter will generate, however the reader can 
+    read any of the formats listed below.
+    
+    mimetype: application/x-microsoft.net.object.binary.base64
+    value   : The object must be serialized with 
+            : System.Runtime.Serialization.Formatters.Binary.BinaryFormatter
+            : and then encoded with base64 encoding.
+    
+    mimetype: application/x-microsoft.net.object.soap.base64
+    value   : The object must be serialized with 
+            : System.Runtime.Serialization.Formatters.Soap.SoapFormatter
+            : and then encoded with base64 encoding.
+
+    mimetype: application/x-microsoft.net.object.bytearray.base64
+    value   : The object must be serialized into a byte array 
+            : using a System.ComponentModel.TypeConverter
+            : and then encoded with base64 encoding.
+    -->
+  <xsd:schema id="root" xmlns="" xmlns:msdata="urn:schemas-microsoft-com:xml-msdata" xmlns:xsd="http://www.w3.org/2001/XMLSchema">
+    <xsd:import namespace="http://www.w3.org/XML/1998/namespace"/>
+    <xsd:element msdata:IsDataSet="true" name="root">
+      <xsd:complexType>
+        <xsd:choice maxOccurs="unbounded">
+          <xsd:element name="metadata">
+            <xsd:complexType>
+              <xsd:sequence>
+                <xsd:element minOccurs="0" name="value" type="xsd:string"/>
+              </xsd:sequence>
+              <xsd:attribute name="name" type="xsd:string" use="required"/>
+              <xsd:attribute name="type" type="xsd:string"/>
+              <xsd:attribute name="mimetype" type="xsd:string"/>
+              <xsd:attribute ref="xml:space"/>
+            </xsd:complexType>
+          </xsd:element>
+          <xsd:element name="assembly">
+            <xsd:complexType>
+              <xsd:attribute name="alias" type="xsd:string"/>
+              <xsd:attribute name="name" type="xsd:string"/>
+            </xsd:complexType>
+          </xsd:element>
+          <xsd:element name="data">
+            <xsd:complexType>
+              <xsd:sequence>
+                <xsd:element minOccurs="0" msdata:Ordinal="1" name="value" type="xsd:string"/>
+                <xsd:element minOccurs="0" msdata:Ordinal="2" name="comment" type="xsd:string"/>
+              </xsd:sequence>
+              <xsd:attribute msdata:Ordinal="1" name="name" type="xsd:string" use="required"/>
+              <xsd:attribute msdata:Ordinal="3" name="type" type="xsd:string"/>
+              <xsd:attribute msdata:Ordinal="4" name="mimetype" type="xsd:string"/>
+              <xsd:attribute ref="xml:space"/>
+            </xsd:complexType>
+          </xsd:element>
+          <xsd:element name="resheader">
+            <xsd:complexType>
+              <xsd:sequence>
+                <xsd:element minOccurs="0" msdata:Ordinal="1" name="value" type="xsd:string"/>
+              </xsd:sequence>
+              <xsd:attribute name="name" type="xsd:string" use="required"/>
+            </xsd:complexType>
+          </xsd:element>
+        </xsd:choice>
+      </xsd:complexType>
+    </xsd:element>
+  </xsd:schema>
+  <resheader name="resmimetype">
+    <value>text/microsoft-resx</value>
+  </resheader>
+  <resheader name="version">
+    <value>2.0</value>
+  </resheader>
+  <resheader name="reader">
+    <value>System.Resources.ResXResourceReader, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value>
+  </resheader>
+  <resheader name="writer">
+    <value>System.Resources.ResXResourceWriter, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value>
+  </resheader>
+  <data name="AuthenticationFailure" xml:space="preserve">
+    <value>Ein Authentifizierungsfehler ist aufgetreten</value>
+  </data>
+  <data name="NoFarmsResponded" xml:space="preserve">
+    <value>Keine Farm hat auf die Anforderung geantwortet</value>
+  </data>
+  <data name="InvalidAuthenticationState" xml:space="preserve">
+    <value>Ein ungültiger Authentifizierungszustand wurde erkannt</value>
+  </data>
+  <data name="FailedBlankUsername" xml:space="preserve">
+    <value>Geben Sie einen Benutzernamen ein</value>
+  </data>
+  <data name="Failed" xml:space="preserve">
+    <value>Benutzername oder Kennwort ist falsch</value>
+  </data>
+  <data name="FailedInvalidDomain" xml:space="preserve">
+    <value>Falsche Domäne</value>
+  </data>
+  <data name="ChangePasswordFailed" xml:space="preserve">
+    <value>Aufruf von ChangePassword hat folgende Ausnahme ausgelöst:</value>
+  </data>
+  <data name="FailedAccountDisabled" xml:space="preserve">
+    <value>Ihr Konto ist deaktiviert</value>
+  </data>
+  <data name="FailedAccountExpired" xml:space="preserve">
+    <value>Ihr Benutzername und Kennwort sind abgelaufen</value>
+  </data>
+  <data name="FailedNotLicensed" xml:space="preserve">
+    <value>Es ist keine Lizenz für Ihr Konto vorhanden</value>
+  </data>
+  <data name="FailedOutsideLoginHours" xml:space="preserve">
+    <value>Sie sind zurzeit nicht zur Anmeldung berechtigt</value>
+  </data>
+  <data name="FailedSecretExpired" xml:space="preserve">
+    <value>Melden Sie sich an Windows an, um Ihr abgelaufenes Kennwort zu ändern.</value>
+  </data>
+  <data name="OldInvalid" xml:space="preserve">
+    <value>Altes Kennwort ist falsch</value>
+  </data>
+  <data name="UnknownFailure" xml:space="preserve">
+    <value>Ein unbekannter Authentifizierungsfehler ist aufgetreten</value>
+  </data>
+  <data name="FailedPasswordComplexity" xml:space="preserve">
+    <value>Geben Sie ein Kennwort ein</value>
+  </data>
+  <data name="FailedNewPasswordComplexity" xml:space="preserve">
+    <value>Ihr neues Kennwort muss die Komplexitätsanforderungen erfüllen</value>
+  </data>
+  <data name="FailedInvalidCredentialFormat" xml:space="preserve">
+    <value>Benutzername oder Kennwort ist falsch</value>
+  </data>
+  <data name="FailedAccountLockedOut" xml:space="preserve">
+    <value>Ihr Konto ist vorübergehend gesperrt</value>
+  </data>
+  <data name="FailedSmartcardRequired" xml:space="preserve">
+    <value>Sie müssen sich mit einer Smartcard authentifizieren</value>
+  </data>
+  <data name="FailedMissingDomain" xml:space="preserve">
+    <value>Geben Sie eine Domäne ein</value>
+  </data>
+  <data name="FailedChangePassword" xml:space="preserve">
+    <value>Fehler beim Ändern des Kennworts</value>
+  </data>
+  <data name="NewInvalidPasswordComplexity" xml:space="preserve">
+    <value>Ihr neues Kennwort muss die Anforderungen für die Kennwortrichtlinie erfüllen. Prüfen Sie die Anforderungen zur Mindestlänge für das Kennwort, zur Kennwortkomplexität und zum Kennwortverlauf.</value>
+  </data>
+  <data name="NewInvalidPasswordHistory" xml:space="preserve">
+    <value>Ihr neues Kennwort muss Verlaufsanforderungen erfüllen</value>
+  </data>
+  <data name="NewInvalidTooRecent" xml:space="preserve">
+    <value>Sie können Ihr Kennwort zurzeit nicht ändern</value>
+  </data>
+  <data name="UnknownChangePasswordFailure" xml:space="preserve">
+    <value>Ein unbekannter Fehler ist aufgetreten</value>
+  </data>
+  <data name="FailedWrongWorkstation" xml:space="preserve">
+    <value>Anmeldung beim angegebenen Server ist nicht möglich.</value>
+  </data>
+</root>

@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg width="21px" height="19px" viewBox="0 0 21 19" version="1.1" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink">
+    <title>favourite-added</title>
+    <g id="favourite-added" stroke="none" stroke-width="1" fill="none" fill-rule="evenodd">
+        <polygon id="Path" fill="#EBAD00" points="10.091 15.754 3.855 19 5.045 12.126 0 7.257 6.973 6.254 10.091 0 13.21 6.254 20.183 7.257 15.137 12.126 16.328 19"></polygon>
+        <path d="M10.091,0 L13.21,6.254 L20.183,7.257 L15.137,12.126 L16.328,19 L10.091,15.754 L3.855,19 L5.045,12.126 L-3.55271368e-15,7.257 L6.973,6.254 L10.091,0 Z M12.5489715,7.16920939 L10.091,2.24 L7.63410931,7.16919777 L2.163,7.955 L6.12073434,11.7744419 L5.185,17.179 L10.090963,14.6266563 L14.997,17.179 L14.0611897,11.7744422 L18.018,7.955 L12.5489715,7.16920939 Z" id="Path" fill="#B28300" fill-rule="nonzero"></path>
+    </g>
+</svg>

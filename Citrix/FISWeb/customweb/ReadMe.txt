@@ -1,0 +1,2 @@
+This directory is for customizations/content that should be copied to all servers in a cluster, but that should not be automatically downloaded to each native client.
+For example customizations relevant to web access only, or message of the day announcements.

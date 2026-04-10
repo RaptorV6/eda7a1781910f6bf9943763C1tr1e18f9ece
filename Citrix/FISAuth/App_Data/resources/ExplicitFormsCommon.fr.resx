@@ -1,0 +1,264 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<root>
+  <!-- 
+    Microsoft ResX Schema 
+    
+    Version 2.0
+    
+    The primary goals of this format is to allow a simple XML format 
+    that is mostly human readable. The generation and parsing of the 
+    various data types are done through the TypeConverter classes 
+    associated with the data types.
+    
+    Example:
+    
+    ... ado.net/XML headers & schema ...
+    <resheader name="resmimetype">text/microsoft-resx</resheader>
+    <resheader name="version">2.0</resheader>
+    <resheader name="reader">System.Resources.ResXResourceReader, System.Windows.Forms, ...</resheader>
+    <resheader name="writer">System.Resources.ResXResourceWriter, System.Windows.Forms, ...</resheader>
+    <data name="Name1"><value>this is my long string</value><comment>this is a comment</comment></data>
+    <data name="Color1" type="System.Drawing.Color, System.Drawing">Blue</data>
+    <data name="Bitmap1" mimetype="application/x-microsoft.net.object.binary.base64">
+        <value>[base64 mime encoded serialized .NET Framework object]</value>
+    </data>
+    <data name="Icon1" type="System.Drawing.Icon, System.Drawing" mimetype="application/x-microsoft.net.object.bytearray.base64">
+        <value>[base64 mime encoded string representing a byte array form of the .NET Framework object]</value>
+        <comment>This is a comment</comment>
+    </data>
+                
+    There are any number of "resheader" rows that contain simple 
+    name/value pairs.
+    
+    Each data row contains a name, and value. The row also contains a 
+    type or mimetype. Type corresponds to a .NET class that support 
+    text/value conversion through the TypeConverter architecture. 
+    Classes that don't support this are serialized and stored with the 
+    mimetype set.
+    
+    The mimetype is used for serialized objects, and tells the 
+    ResXResourceReader how to depersist the object. This is currently not 
+    extensible. For a given mimetype the value must be set accordingly:
+    
+    Note - application/x-microsoft.net.object.binary.base64 is the format 
+    that the ResXResourceWriter will generate, however the reader can 
+    read any of the formats listed below.
+    
+    mimetype: application/x-microsoft.net.object.binary.base64
+    value   : The object must be serialized with 
+            : System.Runtime.Serialization.Formatters.Binary.BinaryFormatter
+            : and then encoded with base64 encoding.
+    
+    mimetype: application/x-microsoft.net.object.soap.base64
+    value   : The object must be serialized with 
+            : System.Runtime.Serialization.Formatters.Soap.SoapFormatter
+            : and then encoded with base64 encoding.
+
+    mimetype: application/x-microsoft.net.object.bytearray.base64
+    value   : The object must be serialized into a byte array 
+            : using a System.ComponentModel.TypeConverter
+            : and then encoded with base64 encoding.
+    -->
+  <xsd:schema id="root" xmlns="" xmlns:msdata="urn:schemas-microsoft-com:xml-msdata" xmlns:xsd="http://www.w3.org/2001/XMLSchema">
+    <xsd:import namespace="http://www.w3.org/XML/1998/namespace"/>
+    <xsd:element msdata:IsDataSet="true" name="root">
+      <xsd:complexType>
+        <xsd:choice maxOccurs="unbounded">
+          <xsd:element name="metadata">
+            <xsd:complexType>
+              <xsd:sequence>
+                <xsd:element minOccurs="0" name="value" type="xsd:string"/>
+              </xsd:sequence>
+              <xsd:attribute name="name" type="xsd:string" use="required"/>
+              <xsd:attribute name="type" type="xsd:string"/>
+              <xsd:attribute name="mimetype" type="xsd:string"/>
+              <xsd:attribute ref="xml:space"/>
+            </xsd:complexType>
+          </xsd:element>
+          <xsd:element name="assembly">
+            <xsd:complexType>
+              <xsd:attribute name="alias" type="xsd:string"/>
+              <xsd:attribute name="name" type="xsd:string"/>
+            </xsd:complexType>
+          </xsd:element>
+          <xsd:element name="data">
+            <xsd:complexType>
+              <xsd:sequence>
+                <xsd:element minOccurs="0" msdata:Ordinal="1" name="value" type="xsd:string"/>
+                <xsd:element minOccurs="0" msdata:Ordinal="2" name="comment" type="xsd:string"/>
+              </xsd:sequence>
+              <xsd:attribute msdata:Ordinal="1" name="name" type="xsd:string" use="required"/>
+              <xsd:attribute msdata:Ordinal="3" name="type" type="xsd:string"/>
+              <xsd:attribute msdata:Ordinal="4" name="mimetype" type="xsd:string"/>
+              <xsd:attribute ref="xml:space"/>
+            </xsd:complexType>
+          </xsd:element>
+          <xsd:element name="resheader">
+            <xsd:complexType>
+              <xsd:sequence>
+                <xsd:element minOccurs="0" msdata:Ordinal="1" name="value" type="xsd:string"/>
+              </xsd:sequence>
+              <xsd:attribute name="name" type="xsd:string" use="required"/>
+            </xsd:complexType>
+          </xsd:element>
+        </xsd:choice>
+      </xsd:complexType>
+    </xsd:element>
+  </xsd:schema>
+  <resheader name="resmimetype">
+    <value>text/microsoft-resx</value>
+  </resheader>
+  <resheader name="version">
+    <value>2.0</value>
+  </resheader>
+  <resheader name="reader">
+    <value>System.Resources.ResXResourceReader, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value>
+  </resheader>
+  <resheader name="writer">
+    <value>System.Resources.ResXResourceWriter, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value>
+  </resheader>
+  <data name="ChangePasswordButtonText" xml:space="preserve">
+    <value>OK</value>
+  </data>
+  <data name="ConfirmPasswordLabel" xml:space="preserve">
+    <value>Confirmer le mot de passe :</value>
+  </data>
+  <data name="LoginButtonText" xml:space="preserve">
+    <value>Ouvrir une session</value>
+  </data>
+  <data name="NewPasswordLabel" xml:space="preserve">
+    <value>Nouveau mot de passe :</value>
+  </data>
+  <data name="OldPasswordLabel" xml:space="preserve">
+    <value>Ancien mot de passe :</value>
+  </data>
+  <data name="PasswordLabel" xml:space="preserve">
+    <value>Mot de passe :</value>
+  </data>
+  <data name="UsernameLabel" xml:space="preserve">
+    <value>Nom d'utilisateur :</value>
+  </data>
+  <data name="DomainLabel" xml:space="preserve">
+    <value>Domaine :</value>
+  </data>
+  <data name="MustChangeExpiredPasswordInfoText" xml:space="preserve">
+    <value>Votre mot de passe a expiré et doit être modifié.</value>
+  </data>
+  <data name="ChangePasswordHeadingText" xml:space="preserve">
+    <value>Modifier le mot de passe</value>
+  </data>
+  <data name="ChangePasswordFailedErrorText" xml:space="preserve">
+    <value>La modification du mot de passe a échoué</value>
+  </data>
+  <data name="LoginFailedErrorText" xml:space="preserve">
+    <value>Échec de l'ouverture de session</value>
+  </data>
+  <data name="ChangePasswordConfirmDifferentErrorText" xml:space="preserve">
+    <value>Les mots de passe ne correspondent pas</value>
+  </data>
+  <data name="SaveCredentialsLabel" xml:space="preserve">
+    <value>Mémoriser mon mot de passe</value>
+  </data>
+  <data name="ChangePasswordConfirmButtonText" xml:space="preserve">
+    <value>OK</value>
+  </data>
+  <data name="ChangePasswordConfirmText" xml:space="preserve">
+    <value>Votre mot de passe a été modifié avec succès.</value>
+  </data>
+  <data name="ChangePasswordInfoText" xml:space="preserve">
+    <value>Entrez votre ancien mot de passe et le nouveau</value>
+  </data>
+  <data name="CancelButtonText" xml:space="preserve">
+    <value>Annuler</value>
+    <comment>Obselete, only used for backwards compatibility. Use the FormsProtocol string instead</comment>
+  </data>
+  <data name="FailureMessageConfirmButtonText" xml:space="preserve">
+    <value>OK</value>
+  </data>
+  <data name="DomainUserLabel" xml:space="preserve">
+    <value>Domaine\utilisateur :</value>
+  </data>
+  <data name="DomainUserAssistiveText" xml:space="preserve">
+    <value>domaine\utilisateur ou utilisateur@domaine.com</value>
+  </data>
+  <data name="MessageConfirmButtonText" xml:space="preserve">
+    <value>OK</value>
+    <comment>Obselete, only used for backwards compatibility. Use the FormsProtocol string instead</comment>
+  </data>
+  <data name="MissingRequiredFields" xml:space="preserve">
+    <value>Le formulaire POSTed ne contient pas tous les champs requis.</value>
+  </data>
+  <data name="SelfServiceNotAllowed" xml:space="preserve">
+    <value>Vous ne pouvez pas utiliser le compte en libre-service. Contactez votre administrateur système.</value>
+  </data>
+  <data name="AccountUnlockFailed" xml:space="preserve">
+    <value>Votre compte n'a pas pu être déverrouillé. Contactez votre administrateur système.</value>
+  </data>
+  <data name="ResetPasswordFailed" xml:space="preserve">
+    <value>Votre mot de passe n'a pas pu être réinitialisé. Contactez votre administrateur système.</value>
+  </data>
+  <data name="ChangePasswordNewInvalid" xml:space="preserve">
+    <value>Entrez un mot de passe conforme à la stratégie de mot de passe de votre entreprise.</value>
+  </data>
+  <data name="MistypedCredentialsOrNotAllowed" xml:space="preserve">
+    <value>Le système n'a pas pu ouvrir de session. Vérifiez l'exactitude des détails que vous avez entrés et réessayez. Si vous ne pouvez toujours pas ouvrir de session, il est possible que vous ne soyez pas autorisé à utiliser le compte en libre-service. Contactez votre administrateur système.</value>
+  </data>
+  <data name="NotPossibleToChangeBlankPasswordText" xml:space="preserve">
+    <value>Il est impossible de modifier un mot de passe vide.</value>
+  </data>
+  <data name="ChangePasswordLogicErrorWrongExplicitBL" xml:space="preserve">
+    <value>Erreur de logique : le même objet métier Explicit que celui utilisé pour déterminer que le mot de passe des utilisateurs a expiré doit être utilisé</value>
+    <comment>For Authentication SDK users</comment>
+  </data>
+  <data name="ElectiveChangePasswordRequiresPassword" xml:space="preserve">
+    <value>Pour pouvoir modifier votre mot de passe, vous devez vous être connecté à l'aide d'un mot de passe</value>
+  </data>
+  <data name="ChangeExpiredPasswordHeadingText" xml:space="preserve">
+    <value>Modifier le mot de passe expiré</value>
+  </data>
+  <data name="AuthenticateHeadingText" xml:space="preserve">
+    <value>Veuillez entrer les informations d'identification fournies par votre organisation pour ouvrir une session.</value>
+  </data>
+  <data name="MissingSelfServiceAccountManagementFormFactoryText" xml:space="preserve">
+    <value>L'implémentation du générateur de formulaires de gestion de comptes en libre-service est manquante.</value>
+  </data>
+  <data name="SelfServiceAccountManagementFormNotCreatedText" xml:space="preserve">
+    <value>Le formulaire de gestion de comptes en libre-service n'a pas été créé.</value>
+  </data>
+  <data name="SelfServiceAccountManagementText" xml:space="preserve">
+    <value>Compte en libre-service</value>
+  </data>
+  <data name="UnknownFailureText" xml:space="preserve">
+    <value>Un échec inconnu s'est produit</value>
+  </data>
+  <data name="SsprChooseResetPassword" xml:space="preserve">
+    <value>Réinitialiser mot de passe</value>
+  </data>
+  <data name="SsprChooseUnlockAccount" xml:space="preserve">
+    <value>Déverrouiller compte</value>
+  </data>
+  <data name="SsprTaskSelectedButtonText" xml:space="preserve">
+    <value>Suivant</value>
+  </data>
+  <data name="SsprTaskSelectionHeadingText" xml:space="preserve">
+    <value>Compte en libre-service</value>
+  </data>
+  <data name="SsprTaskSelectionRadioButtonLabel" xml:space="preserve">
+    <value>Choisissez une tâche :</value>
+  </data>
+  <data name="SsprTaskUsage" xml:space="preserve">
+    <value>Si votre compte est verrouillé ou que vous avez oublié votre mot de passe, vous pouvez utiliser le compte en libre-service pour le réinitialiser.</value>
+  </data>
+  <data name="SsprTaskSelectionUsage" xml:space="preserve">
+    <value>Si votre compte est verrouillé ou que vous avez oublié votre mot de passe, vous pouvez utiliser le compte en libre-service pour le réinitialiser.</value>
+  </data>
+  <data name="ResetPasswordButtonText" xml:space="preserve">
+    <value>Réinitialiser</value>
+  </data>
+  <data name="ResetPasswordHeadingText" xml:space="preserve">
+    <value>Réinitialiser mot de passe</value>
+  </data>
+  <data name="HttpsRequiredForAccountSelfService" xml:space="preserve">
+    <value>HTTPS est requis pour accéder à la fonctionnalité de gestion en libre-service du compte</value>
+  </data>
+</root>

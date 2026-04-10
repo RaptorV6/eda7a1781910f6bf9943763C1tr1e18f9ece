@@ -1,0 +1,23 @@
+﻿<?xml version="1.0" encoding="UTF-8"?>
+<AuthenticateResponse xmlns="http://citrix.com/authentication/response/1">
+@* ©2015 Citrix Systems, Inc.   All rights reserved. *@
+@ControlHeaders(status: StatusSuccess, result: ResultMoreInfo, stateContext: GetValue("StateContext"))
+  <AuthenticationRequirements>
+    <PostBack>@GetTextValue("PostBackUrl")</PostBack>
+    <CancelPostBack>@GetTextValue("CancelPostBackUrl")</CancelPostBack>
+    <Requirements>
+@Heading("ExplicitFormsCommon:SsprTaskSelectionHeadingText")
+@InfoMessages()
+@WarningMessages()
+@Text("ExplicitFormsCommon:SsprTaskSelectionUsage")
+      <Requirement>
+@Credential(credentialType: "textcredential", id: @GetTextValue("ssprTaskSelectionRadioButtonId"))
+@TextLabel(labelKey: "ExplicitFormsCommon:SsprTaskSelectionRadioButtonLabel")
+@InputRadioButton(displayItemsValueName: "radioButtonValues", initialSelectionValueName: "initialRadioButtonValue")
+      </Requirement>
+@ErrorMessages()
+@Button(id: @GetTextValue("nextButtonId"), buttonKey: "ExplicitFormsCommon:SsprTaskSelectedButtonText")
+@Button(id: @GetTextValue("cancelSsprBtnId"), buttonKey: "ExplicitFormsCommon:CancelButtonText")
+    </Requirements>
+  </AuthenticationRequirements>
+</AuthenticateResponse>

@@ -1,0 +1,21 @@
+﻿<?xml version="1.0" encoding="UTF-8"?>
+<AuthenticateResponse xmlns="http://citrix.com/authentication/response/1">
+@* ©2016 Citrix Systems, Inc.   All rights reserved. *@
+@ControlHeaders(status: StatusSuccess, result: ResultMoreInfo, stateContext: GetValue("StateContext"))
+  <AuthenticationRequirements>
+    <PostBack>@GetTextValue("PostBackUrl")</PostBack>
+    <CancelPostBack>@GetTextValue("CancelPostBackUrl")</CancelPostBack>
+    <CancelButtonText>@GetLocalisedTextValue("SamlForms:CancelButtonText")</CancelButtonText>
+    <Requirements>
+@* @Heading("SamlForms:AuthenticateHeadingText") *@
+@InfoMessages()
+@WarningMessages()
+      <Requirement>
+@WebViewCredential(startUrl: @GetTextValue("webViewStartAddress"), id: @GetTextValue("samlResponseId"))
+@TextLabel(labelKey: null, labelType: Label.LabelType.none)
+        <Input/>
+      </Requirement>
+@ErrorMessages()
+    </Requirements>
+  </AuthenticationRequirements>
+</AuthenticateResponse>

@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<html>
+	<head>
+		<title>Workspace Release</title>
+		<link href="/assets/workspace/favicon.png" type="image/png" rel="shortcut icon" />
+		<meta http-equiv="X-UA-Compatible" content="IE=edge" />
+		<meta name="viewport" content="width=device-width,initial-scale=1" />
+		<meta charset="utf-8" />
+	</head>
+
+	<body>
+		<script>
+			const cdnPath = getCdnUrl();
+
+			(async function () {
+				const releasesJSON = await getGlobalCanaryInfo();
+				const [CDNInfra, optInBuild, optOutBuild, customerBuild, customerCanaryInfo] =
+					await Promise.all([
+						getCDNInfra(),
+						getBuildTag(cdnPath + releasesJSON.entries.optIn),
+						getBuildTag(cdnPath + releasesJSON.entries.optOut),
+						getBuildTag(`https://${location.host}/Citrix/StoreWeb/`).catch(() => null),
+						fetch(`https://${location.host}/Citrix/StoreWeb/Cdn/ViewCanary`)
+							.then(res => res.text())
+							.catch(() => null),
+					]);
+
+				const displayedResult = {
+					globalReleaseStatus: releasesJSON,
+					cdn: CDNInfra,
+				};
+
+				if (customerBuild) {
+					const isOptIn = customerBuild.version === optInBuild.version;
+					displayedResult.customerReleaseStatus = {
+						branch: customerBuild.branch,
+						wspCanaryInfo:
+							customerCanaryInfo && customerCanaryInfo.split(/\r|\n/).filter(Boolean),
+					};
+				}
+
+				displayedResult.builds = {
+					optIn: {
+						...optInBuild,
+						assetManifestLink: getAssetManifestUrl('optIn'),
+					},
+					optOut: {
+						...optOutBuild,
+						assetManifestLink: getAssetManifestUrl('optOut'),
+					},
+				};
+
+				document.getElementById('content').innerText = JSON.stringify(
+					displayedResult,
+					null,
+					2
+				);
+
+				function getAssetManifestUrl(type) {
+					try {
+						const file = releasesJSON.entries[type]
+							.replace('receiver_', 'manifest-')
+							.replace('.html', '.json');
+
+						return cdnPath + file;
+					} catch (e) {
+						console.error(e);
+					}
+				}
+			})();
+
+			function getCdnUrl(path = '/assets/workspace/') {
+				const hostname = location.hostname.toLowerCase();
+				const domainMap = [
+					{ match: '.cloudstaging.us', domain: 'cloudstaging.us' },
+					{ match: '.cloud.us', domain: 'cloud.us' },
+					{ match: '.citrixcloudstaging.jp', domain: 'cloudburrito.com' },        
+					{ match: '.citrixcloud.jp', domain: 'cloud.com' },
+					{ match: '.cloudburrito.', domain: 'cloudburrito.com' },
+					{ match: '.cloud.', domain: 'cloud.com' },
+				];
+				const found = domainMap.find(entry => hostname.includes(entry.match));
+				const topLevelDomain = found ? found.domain : 'cloud.com';  //for custom domain we don't know if it is cloud or cloudburrito so defaulting to cloud.com
+				return `https://ctx-ws-assets.${topLevelDomain}${path}`;
+			}
+
+			async function getBuildTag(path) {
+				const buildTagRegEx = /<!--buildtag ([\s\S]+) -->/;
+				const res = await fetch(path);
+				const html = await res.text();
+				return JSON.parse(html.match(buildTagRegEx)[1]);
+			}
+
+			async function getGlobalCanaryInfo() {
+				const res = await fetch(cdnPath + 'releases.json');
+				return res.json();
+			}
+
+			async function getCDNInfra() {
+				const beaconRes = await fetch(getCdnUrl('/.beacon.json'));
+				return await beaconRes.json();
+			}
+		</script>
+
+		<div>
+			<pre id="content"><i>loading...</i></pre>
+		</div>
+	</body>
+</html>

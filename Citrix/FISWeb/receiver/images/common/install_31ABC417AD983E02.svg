@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<svg width="17px" height="17px" viewBox="0 0 17 17" version="1.1" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink">
+    <!-- Generator: sketchtool 47 (45396) - http://www.bohemiancoding.com/sketch -->
+    <title>2A14E5B5-8BAD-47EF-B43F-4147F6E660A0</title>
+    <desc>Created with sketchtool.</desc>
+    <defs>
+        <rect id="path-1" x="0" y="0" width="15" height="15" rx="2"></rect>
+    </defs>
+    <g id="Page-1" stroke="none" stroke-width="1" fill="none" fill-rule="evenodd">
+        <g id="XM-q1-MVP-iOS-App-List-Installing1" transform="translate(-83.000000, -226.000000)">
+            <g id="Group-11-Copy-2" transform="translate(84.000000, 151.000000)">
+                <g id="install" transform="translate(0.000000, 76.000000)">
+                    <g id="Rectangle-18">
+                        <use fill="#FFFFFF" fill-rule="evenodd" xlink:href="#path-1"></use>
+                        <rect stroke="#10B228" stroke-width="1" x="-0.5" y="-0.5" width="16" height="16" rx="2"></rect>
+                    </g>
+                    <g id="install-symbol-copy" transform="translate(1.000000, 0.000000)">
+                        <g id="ic_file_download_black_24px(1)" transform="translate(0.000000, 1.000000)">
+                            <path d="M10.2916667,4.875 L8.125,4.875 L8.125,1.625 L4.875,1.625 L4.875,4.875 L2.70833333,4.875 L6.5,8.66666667 L10.2916667,4.875 Z M2.70833333,9.75 L2.70833333,10.8333333 L10.2916667,10.8333333 L10.2916667,9.75 L2.70833333,9.75 Z" id="Shape" fill="#1EB033" fill-rule="nonzero"></path>
+                            <polygon id="Shape" points="0 0 13 0 13 13 0 13"></polygon>
+                        </g>
+                    </g>
+                </g>
+            </g>
+        </g>
+    </g>
+</svg>

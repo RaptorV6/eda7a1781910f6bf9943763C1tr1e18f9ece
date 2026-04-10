@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<svg width="14px" height="15px" viewBox="0 0 14 15" version="1.1" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink">
+    <!-- Generator: sketchtool 47 (45396) - http://www.bohemiancoding.com/sketch -->
+    <title>8A57C374-B6D5-462F-8DA4-9B216D6D2975</title>
+    <desc>Created with sketchtool.</desc>
+    <defs></defs>
+    <g id="Pages" stroke="none" stroke-width="1" fill="none" fill-rule="evenodd" fill-opacity="0.7">
+        <g id="V6---mobile---side-menu" transform="translate(-28.000000, -637.000000)" fill="#FFFFFF" class="theme-header-color">
+            <g id="sidebar" transform="translate(-15.000000, 1.000000)">
+                <g id="Personal-nav" transform="translate(15.000000, 499.000000)">
+                    <g id="logoff-svg" transform="translate(28.000000, 137.000000)">
+                        <path d="M2,3 L2,13 L10,13 C10,13.552719 10,13.8860523 10,14 C10,14.1139477 9.66666667,14.447281 9,15 L1,15 L0,14 L0,13.5 L0,2.5 L0,2 C0.389952209,1.36792264 0.723285542,1.03458931 1,1 C1.27671446,0.965410693 3.94338112,0.965410693 9,1 C9.66666667,1.5060191 10,1.83935243 10,2 C10,2.16064757 10,2.4939809 10,3 L2,3 Z M10,5 L8,5 L8,3 L10,3 L10,5 Z M10,10.974058 L10,13 L8,13 L8,10.974058 L10,10.974058 Z" id="Combined-Shape"></path>
+                        <polygon id="Path" transform="translate(10.000000, 8.000000) rotate(270.000000) translate(-10.000000, -8.000000) " points="13 9 11 9 11 4 9 4 9 9 7 9 10 12"></polygon>
+                    </g>
+                </g>
+            </g>
+        </g>
+    </g>
+</svg>

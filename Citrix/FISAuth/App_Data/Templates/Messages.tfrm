@@ -1,0 +1,18 @@
+﻿<?xml version="1.0" encoding="UTF-8"?>
+<AuthenticateResponse xmlns="http://citrix.com/authentication/response/1">
+@* ©2014 Citrix Systems, Inc.   All rights reserved. *@
+@ControlHeaders(status: StatusSuccess, result: ResultMoreInfo, stateContext: GetValue("StateContext"))
+  <AuthenticationRequirements>
+    <PostBack>@GetTextValue("PostBackUrl")</PostBack>
+    <CancelPostBack>@GetTextValue("CancelPostBackUrl")</CancelPostBack>
+    <Requirements>
+@if (ControlValue("DisplayHeading")){ @Heading( @GetTextValue("HeadingText"))}
+@PlainMessages()
+@InfoMessages()
+@WarningMessages()
+@ErrorMessages()
+@ConfirmationMessages()
+@Button(id:@GetTextValue("messagesButtonId"), buttonKey: "FormsProtocol:MessageConfirmButtonText")
+    </Requirements>
+  </AuthenticationRequirements>
+</AuthenticateResponse>

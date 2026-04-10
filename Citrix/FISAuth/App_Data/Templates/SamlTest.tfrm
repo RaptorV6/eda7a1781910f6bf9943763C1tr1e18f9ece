@@ -1,0 +1,18 @@
+﻿@using System.Collections
+<html>
+  <head>
+    <meta http-equiv='Content-Type' content='text/html; charset=UTF-8'/>
+  </head>
+  <body>
+    <h1>@GetLocalisedTextValue("SamlForms:SamlTestIdentityText"):  @GetTextValue("identity")</h1>
+    <h2>@GetLocalisedTextValue("SamlForms:SamlTestClaimsText")</h2>
+      <span>
+@foreach(string textKey in (IEnumerable)GetObject("claims"))
+{
+      <div>@textKey</div>
+}    
+      </span>
+    <h2>@GetLocalisedTextValue("SamlForms:SamlTestAssertionText")</h2>
+    <span>@GetTextValue("assertion")</span>
+  </body>
+</html>

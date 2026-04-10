@@ -1,0 +1,171 @@
+<!doctype html>
+<html _manifest="workspace.appcache">
+
+<head><meta http-equiv="Content-Security-Policy" content="base-uri 'none'; object-src 'none'; script-src 'self' 'nonce-Y2xpZW50c2V0dGluZ3MtMTc2NTI4NDYyNjI3OA==' 'nonce-Z2xvYmFscy0xNzY1Mjg0NjI2Mjc4' 'sha256-lC6k21IsIVRa6Z88kN4lAQMRpzzrPDH0YjezP4P44Ds=' 'sha256-oAgjt5uNAevmvtfBmKFB/324bFnbWnvGq6ObSxDoTWQ=' 'sha256-OEXnXsEixurzPTzZjC/foFDEUN+8P0mTwsfgjR6FIxc=' 'sha256-rauInGqBXeYLXoVt48mQi4JFKpzE+8PKWRoVSvaPHns=' 'sha256-oBYpEtW/dWj9LmQMGHUT4GpUk5xnhppN+4elHYJZ1wE=' 'nonce-6Aal9yme//RnBATXAWhV3Q==' 'nonce-toAdsmDUFPyLlHdVx34CSg==' 'nonce-pTgjC948tICkOtFnwe58hw=='; style-src 'self' 'unsafe-inline'; manifest-src 'self'">
+	<meta name="recovered-with-service-worker-cache" content="false">
+	<meta name="apple-itunes-app" content="app-id=363501921">
+	<meta name="robots" content="noindex, nofollow, noarchive">
+	<meta name="AdsBot-Google" content="noindex">
+	<meta http-equiv="X-UA-Compatible" content="IE=edge">
+	<meta name="viewport" content="width=device-width,initial-scale=1">
+	<meta charset="utf-8">
+	<link href="assets/workspace/favicon.png" type="image/png" rel="shortcut icon">
+	<style>
+	@-webkit-keyframes loading {
+	0% {
+	  -webkit-transform: rotate(0deg);
+			  transform: rotate(0deg);
+	}
+	25% {
+	  -webkit-transform: rotate(90deg);
+			  transform: rotate(90deg);
+	}
+	50% {
+	  -webkit-transform: rotate(180deg);
+			  transform: rotate(180deg);
+	}
+	75% {
+	  -webkit-transform: rotate(270deg);
+			  transform: rotate(270deg);
+	}
+  }
+  @keyframes loading {
+	0% {
+	  -webkit-transform: rotate(0deg);
+			  transform: rotate(0deg);
+	}
+	25% {
+	  -webkit-transform: rotate(90deg);
+			  transform: rotate(90deg);
+	}
+	50% {
+	  -webkit-transform: rotate(180deg);
+			  transform: rotate(180deg);
+	}
+	75% {
+	  -webkit-transform: rotate(270deg);
+			  transform: rotate(270deg);
+	}
+  }
+  .loading-in-progress {
+	-webkit-box-align: center;
+		-ms-flex-align: center;
+			align-items: center;
+	background-color: white;
+	display: -webkit-box;
+	display: -ms-flexbox;
+	display: flex;
+	-webkit-box-orient: vertical;
+		flex-direction: column;
+	-webkit-box-pack: center;
+		-ms-flex-pack: center;
+			justify-content: center;
+	overflow: hidden;
+	position: absolute;
+	top: 0;
+	bottom: 0;
+	right: 0;
+	left: 0;
+  }
+  .loading-spinner {
+	background-position: center center;
+	background-image: url("assets/workspace/spinner-teal.svg");
+	background-repeat: no-repeat;
+	-webkit-animation: loading 0.7s infinite steps(1);
+			animation: loading 0.7s infinite steps(1);
+	background-size: 24px;
+	height: 24px;
+	width: 24px;
+  }
+  .loading-spinner-animated {
+	background-position: center center;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	background-size: 24px;
+	height: 24px;
+	width: 24px;
+  }
+  .loading-spinner-path {
+	stroke: #005463;
+	stroke-dasharray: 187;
+	stroke-dashoffset: 187;
+	stroke-width: 8;
+	-webkit-transform-origin: center;
+			transform-origin: center;
+  }
+  .spinner-workspace {
+	background-size: 48px;
+	height: 48px;
+	width: 48px;
+	margin-top: 20px;
+  }
+  .spinner-workspace-animated {
+	background-size: 56px;
+	height: 56px;
+	width: 56px;
+  }
+  .workspace-logo {
+	background-position: center center;
+	background-image: url("assets/workspace/workspace-vertical-logo-teal.svg");
+	background-repeat: no-repeat;
+	background-size: 231px;
+	height: 104px;
+	width: 231px;
+  }
+
+	</style>
+	<style data-citrix-ui></style>
+	<style data-aphrodite></style>
+	<script type="text/javascript">
+		if (window['performance'] && window['performance'].mark) {
+			window.performance.mark('EntryHtml_Start');
+		}
+	</script>
+	
+	<script type="text/javascript" nonce="Z2xvYmFscy0xNzY1Mjg0NjI2Mjc4">
+		window.CTXSHTML_GLOBALS = {
+			BASE_CDN_URL: "assets/workspace/"
+		};
+
+		
+
+	</script>
+	
+</head>
+
+<body>
+	<script type="text/javascript" nonce="Y2xpZW50c2V0dGluZ3MtMTc2NTI4NDYyNjI3OA==">/** window['ClientSettings'] */</script>
+	<div id="applicationHost">
+		<div id="originalLoading" class="loading-in-progress" hidden>
+			<div class="workspace-logo"></div>
+			<div class="loading-spinner spinner-workspace"></div>
+		</div>
+		<div id="newLoading" class="loading-in-progress" hidden>
+			<div class="loading-spinner-animated spinner-workspace-animated">
+				<svg width="56px" height="56px" viewBox="0 0 66 66" xmlns="http://www.w3.org/2000/svg">
+					<circle class="loading-spinner-path" fill="none" stroke-linecap="round" cx="33" cy="33" r="28"/>
+				</svg>
+			</div>
+		</div>
+	</div>
+<!--buildtag {
+  "time": "Dec 09 2025 12:50:26 +00:00",
+  "version": "53eeb39038",
+  "build": 55,
+  "branch": "release/onprem-cr-2511",
+  "source": "azure/workspace.html"
+} -->
+
+	
+		<script defer="defer" src="assets/workspace/runtime.aee01c8548640179f896.js" nonce="6Aal9yme//RnBATXAWhV3Q=="></script>
+<script defer="defer">(self.webpackChunk_citrite_workspace_ui=self.webpackChunk_citrite_workspace_ui||[]).push([[353],{25984:function(){!function(e,r){try{return void new Map}catch(e){}var a=e.languages&&e.languages.length>0?e.languages:[e.language||e.browserLanguage||"en"],n=["en","de","es","fr","ja","zh-CN"];function t(e){for(var r=e.substring(0,2),a=0;a<n.length;a++)if(n[a].substring(0,2)===r)return n[a];return null}for(var s=0;s<a.length;s++){var u=t(a[s]);if(u)return void(r.href="assets/workspace/html/"+u+"/upgradebrowser.html")}r.href="assets/workspace/html/en/upgradebrowser.html"}(navigator,location)}},function(e){"use strict";var r;r=25984,e(e.s=r)}]);
+//# sourceMappingURL=INLINED_legacyRedirect.293cd24031d346ff2246.js.map</script>
+<script defer="defer">(self.webpackChunk_citrite_workspace_ui=self.webpackChunk_citrite_workspace_ui||[]).push([[300],{46533:function(){!function(){var n,e,t,r=1400,i=140.25;function a(n){return n<.5?4*n*n*n:(n-1)*(2*n-2)*(2*n-2)+1}function o(c,s){e||(e=c);var u=c-e;u>1500&&(e=c,u=0),t||(t=c);var m=c-t;m>2800&&(t=c,m=0),function(n,e,t){var o,c,s,u=n/1500*359;e<r?(o=187-(c=a(e/r))*i,s=90*c):(o=46.75+(c=a((e-r)/r))*i,s=90+269*c),t.style.strokeDashoffset=o;var m=!(window.chrome||"undefined"!=typeof InstallTrigger),f=navigator.userAgent.match(/ Safari/)&&!navigator.userAgent.match(/Chrome/)&&!navigator.userAgent.match(/Chromium/),d=f&&navigator.userAgent.match(/Version/)?Number(navigator.userAgent.split(" ").find((function(n){return n.startsWith("Version/")})).split("/")[1].split(".")[0]):15,p=!!m&&(!f||d<15);t.setAttribute("transform-origin","center center"),t.setAttribute("transform","rotate("+(s+u)+(p?", 33, 33)":")"))}(u,m,s),n=requestAnimationFrame((function(n){o(n,s)}))}function c(){s();var e=document.querySelector(".loading-spinner-path");n=requestAnimationFrame((function(n){o(n,e)}))}function s(){cancelAnimationFrame(n)}window.startSpinner=c,window.stopSpinner=s;var u=window.ClientSettings&&window.ClientSettings.match(/WSUI3567FTULoadingMessaging/)&&document.querySelector("#newLoading");u?(document.querySelector(".spinner-workspace-animated").addEventListener("animationstart",(function(){window.performance&&window.performance.mark&&performance.mark("first_spin_animation")}),{once:!0}),u.removeAttribute("hidden"),c()):(document.querySelector(".spinner-workspace").addEventListener("animationstart",(function(){window.performance&&window.performance.mark&&performance.mark("first_spin_animation")}),{once:!0}),document.querySelector("#originalLoading").removeAttribute("hidden"))}()}},function(n){"use strict";var e;e=46533,n(n.s=e)}]);
+//# sourceMappingURL=INLINED_spinner.0f48d097468685cbb828.js.map</script>
+<script defer="defer" src="assets/workspace/react.014325c9cd9b94dcda4b.js" nonce="toAdsmDUFPyLlHdVx34CSg=="></script>
+<script defer="defer" src="assets/workspace/workspace.20c46d65e54c933686c0.js" nonce="pTgjC948tICkOtFnwe58hw=="></script>
+	
+</body>
+
+</html>

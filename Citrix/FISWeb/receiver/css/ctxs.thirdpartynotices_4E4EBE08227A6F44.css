@@ -1,0 +1,83 @@
+﻿html, body
+{
+	padding: 0;
+	margin: 0;
+	width: 100%;
+	height: 100%;
+	font-family: "citrixsans", Arial, Helvetica;
+	font-style: normal;
+	font-size: 16px;
+	color: #333333;
+}
+
+.headerDiv {
+	background-color: #cccccc;
+	height: 100px;
+	text-align: center;
+}
+
+.headerImgDiv {
+	width: 960px;
+	padding-top: 23px;
+	text-align: left;
+	display: inline-block;
+}
+
+.headerImg {
+	width: 132px;
+	height: 54px;
+}
+
+.outerDiv {
+	text-align: center;
+}
+
+.containingDiv {
+	text-align: left;
+	width: 960px;
+	display: inline-block;
+}
+
+h1 {
+	font-weight: 200;
+	font-size: 40px;
+	line-height: 47px;
+	margin-bottom: 25px;
+	min-height: 0;
+}
+
+/* unique-headings: There is probably a better way of doing this, but supress for now */
+h1.initialHeader { /* csslint allow: unique-headings */
+	margin-top: 25px;
+}
+
+/* unique-headings: There is probably a better way of doing this, but supress for now */
+h1.appendixHeader { /* csslint allow: unique-headings */
+	margin-bottom: 0;
+}
+
+h4 {
+	font-weight: 600;
+	font-size: 16px;
+	line-height: 23px;
+	margin-top: 0;
+	margin-bottom: 15px;
+}
+
+p, li {
+	font-weight: 400;
+	font-size: 16px;
+	line-height: 23px;
+	margin-bottom: 15px;
+    /* important: Should be looked at in the future */
+	padding-bottom: 0!important; /* csslint allow: important  */
+}
+
+a:focus {
+	outline: 1px dotted #CCC;
+}
+
+a, a:active, a:visited {
+	color: #0468D1;
+	text-decoration: underline;
+}

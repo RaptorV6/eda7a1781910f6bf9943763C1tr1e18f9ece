@@ -1,10 +1,527 @@
-﻿@page
+@page
 @model IndexModel
 @{
-    ViewData["Title"] = "Home page";
+    ViewData["Title"] = Model.PanelTitle;
+    var configuredBaseUrl = string.IsNullOrWhiteSpace(Model.CitrixBaseUrl)
+        ? "Není nastaveno"
+        : Model.CitrixBaseUrl;
 }
 
-<div class="text-center">
-    <h1 class="display-4">Welcome</h1>
-    <p>Learn about <a href="https://learn.microsoft.com/aspnet/core">building Web apps with ASP.NET Core</a>.</p>
+<style>
+    .citrix-diagnostics-panel {
+        border: 1px solid #d9e2ec;
+        border-radius: 1rem;
+        background: #ffffff;
+        box-shadow: 0 1rem 2rem rgba(15, 23, 42, 0.06);
+        padding: 1.5rem;
+    }
+
+    .citrix-diagnostics-title {
+        margin-bottom: 0.25rem;
+        font-size: 1.75rem;
+        font-weight: 700;
+    }
+
+    .citrix-diagnostics-subtitle {
+        color: #52606d;
+        margin-bottom: 0;
+    }
+
+    .citrix-diagnostics-note {
+        margin: 1rem 0;
+        border-radius: 0.75rem;
+        background: #f8fafc;
+        border: 1px solid #d9e2ec;
+        padding: 0.85rem 1rem;
+        color: #243b53;
+    }
+
+    .citrix-diagnostics-meta {
+        margin-bottom: 1rem;
+        color: #52606d;
+        word-break: break-word;
+    }
+
+    .citrix-diagnostics-status {
+        font-weight: 700;
+        margin-bottom: 1rem;
+    }
+
+    .citrix-diagnostics-status[data-level="info"] {
+        color: #0f172a;
+    }
+
+    .citrix-diagnostics-status[data-level="warn"] {
+        color: #b45309;
+    }
+
+    .citrix-diagnostics-status[data-level="error"] {
+        color: #b42318;
+    }
+
+    .citrix-diagnostics-status[data-level="success"] {
+        color: #047857;
+    }
+
+    .citrix-app-list {
+        list-style: none;
+        margin: 0;
+        padding: 0;
+        display: grid;
+        gap: 0.75rem;
+    }
+
+    .citrix-app-item {
+        display: flex;
+        align-items: center;
+        gap: 0.85rem;
+        padding: 0.85rem 1rem;
+        border-radius: 0.85rem;
+        border: 1px solid #d9e2ec;
+        background: #f8fafc;
+    }
+
+    .citrix-app-icon {
+        width: 42px;
+        height: 42px;
+        object-fit: contain;
+        border-radius: 0.65rem;
+        border: 1px solid #cbd5e1;
+        background: #ffffff;
+        padding: 0.25rem;
+        flex-shrink: 0;
+    }
+
+    .citrix-app-name {
+        font-weight: 600;
+        color: #102a43;
+    }
+
+    .citrix-empty-state {
+        color: #52606d;
+        margin-bottom: 0;
+    }
+
+    .citrix-diagnostics-log {
+        margin-top: 1rem;
+        margin-bottom: 0;
+        padding: 1rem;
+        min-height: 18rem;
+        max-height: 30rem;
+        overflow: auto;
+        border-radius: 0.85rem;
+        background: #0f172a;
+        color: #e2e8f0;
+        white-space: pre-wrap;
+        font-size: 0.875rem;
+        line-height: 1.45;
+    }
+</style>
+
+<div id="citrix-diagnostics-root"
+     class="citrix-diagnostics-panel"
+     data-base-url="@Model.CitrixBaseUrl"
+     data-panel-title="@Model.PanelTitle"
+     data-body-preview-limit="@Model.BodyPreviewLimit">
+    <div class="mb-3">
+        <h1 class="citrix-diagnostics-title">@Model.PanelTitle</h1>
+        <p class="citrix-diagnostics-subtitle">Minimalní diagnostický PoC pro ověření StoreFront Web API a načtení aplikací uživatele.</p>
+    </div>
+
+    <div class="citrix-diagnostics-note">
+        Nejdřív se přihlaste do Citrixu ve stejném browseru a potom otevřete tuto stránku.
+    </div>
+
+    <div class="citrix-diagnostics-meta">
+        Použitá Citrix URL:
+        <code id="citrix-base-url">@configuredBaseUrl</code>
+    </div>
+
+    <div id="citrix-status" class="citrix-diagnostics-status" data-level="info">Načítám Citrix konfiguraci…</div>
+
+    <div id="citrix-apps">
+        <ul id="citrix-app-list" class="citrix-app-list"></ul>
+        <p id="citrix-empty-state" class="citrix-empty-state d-none"></p>
+    </div>
+
+    <pre id="citrix-log" class="citrix-diagnostics-log"></pre>
 </div>
+
+@section Scripts {
+    <script>
+        (() => {
+            const root = document.getElementById('citrix-diagnostics-root');
+            if (!root) {
+                return;
+            }
+
+            const statusElement = document.getElementById('citrix-status');
+            const appListElement = document.getElementById('citrix-app-list');
+            const emptyStateElement = document.getElementById('citrix-empty-state');
+            const logElement = document.getElementById('citrix-log');
+
+            const rawBaseUrl = (root.dataset.baseUrl || '').trim();
+            const normalizedBaseUrl = rawBaseUrl ? rawBaseUrl.replace(/\/?$/, '/') : '';
+            const bodyPreviewLimit = Number.parseInt(root.dataset.bodyPreviewLimit || '1200', 10) || 1200;
+
+            const setStatus = (message, level) => {
+                statusElement.textContent = message;
+                statusElement.dataset.level = level;
+            };
+
+            const appendLogLine = (level, message) => {
+                const timestamp = new Date().toISOString();
+                logElement.textContent += `[${timestamp}] [${level}] ${message}\n`;
+                logElement.scrollTop = logElement.scrollHeight;
+            };
+
+            const log = {
+                info(message) {
+                    console.log(message);
+                    appendLogLine('INFO', message);
+                },
+                warn(message) {
+                    console.warn(message);
+                    appendLogLine('WARN', message);
+                },
+                error(message) {
+                    console.error(message);
+                    appendLogLine('ERROR', message);
+                }
+            };
+
+            const truncate = (value) => {
+                if (value == null) {
+                    return '';
+                }
+
+                const text = String(value);
+                return text.length > bodyPreviewLimit
+                    ? `${text.slice(0, bodyPreviewLimit)}... [zkráceno]`
+                    : text;
+            };
+
+            const getSafeJsonPreview = (value) => {
+                try {
+                    return truncate(JSON.stringify(value, null, 2));
+                } catch (error) {
+                    return `JSON preview selhal: ${error instanceof Error ? error.message : String(error)}`;
+                }
+            };
+
+            const getAccessibleHeaders = (response) => {
+                const headers = {};
+
+                response.headers.forEach((value, key) => {
+                    headers[key] = value;
+                });
+
+                return headers;
+            };
+
+            const getCookieValue = (cookieName) => {
+                const escapedName = cookieName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+                const match = document.cookie.match(new RegExp(`(?:^|; )${escapedName}=([^;]*)`));
+                return match ? decodeURIComponent(match[1]) : '';
+            };
+
+            const joinUrl = (baseUrl, relativeOrAbsoluteUrl) => {
+                try {
+                    return new URL(relativeOrAbsoluteUrl, baseUrl).toString();
+                } catch (error) {
+                    log.warn(`Nepodařilo se složit URL z hodnoty "${relativeOrAbsoluteUrl}": ${error instanceof Error ? error.message : String(error)}`);
+                    return relativeOrAbsoluteUrl;
+                }
+            };
+
+            const logResponse = (stepName, requestUrl, method, response, responseText) => {
+                log.info(`${stepName}: request ${method} ${requestUrl}`);
+                log.info(`${stepName}: status ${response.status} ${response.statusText || ''}`.trim());
+                log.info(`${stepName}: redirected=${response.redirected}, finalUrl=${response.url || '(neznámé)'}`);
+                log.info(`${stepName}: content-type=${response.headers.get('content-type') || '(neznámé)'}`);
+
+                const headers = getAccessibleHeaders(response);
+                if (Object.keys(headers).length > 0) {
+                    log.info(`${stepName}: čitelné response hlavičky: ${getSafeJsonPreview(headers)}`);
+                }
+
+                const challengeHeader = response.headers.get('CitrixWebReceiver-Authenticate');
+                if (challengeHeader) {
+                    log.warn(`${stepName}: CitrixWebReceiver-Authenticate=${challengeHeader}`);
+                }
+
+                const preview = truncate(responseText);
+                if (preview) {
+                    log.info(`${stepName}: body preview=${preview}`);
+                } else {
+                    log.info(`${stepName}: body preview je prázdný.`);
+                }
+            };
+
+            const readAttributes = (xmlDocument, tagName, attributeNames) => {
+                const element = xmlDocument.getElementsByTagName(tagName)[0];
+                if (!element) {
+                    return null;
+                }
+
+                const result = {};
+
+                for (const attributeName of attributeNames) {
+                    const attributeValue = element.getAttribute(attributeName);
+                    if (attributeValue) {
+                        result[attributeName] = attributeValue;
+                    }
+                }
+
+                return Object.keys(result).length > 0 ? result : null;
+            };
+
+            const parseConfiguration = (xmlText) => {
+                const parser = new DOMParser();
+                const xmlDocument = parser.parseFromString(xmlText, 'application/xml');
+                const parserError = xmlDocument.getElementsByTagName('parsererror')[0];
+
+                if (parserError) {
+                    throw new Error(parserError.textContent?.trim() || 'Neznámá chyba při parsování XML konfigurace.');
+                }
+
+                const configuration = {
+                    authentication: readAttributes(xmlDocument, 'authentication', ['locationURL']),
+                    authManager: readAttributes(xmlDocument, 'authManager', [
+                        'getUsernameURL',
+                        'getUserDetailsURL',
+                        'logoffURL',
+                        'changeCredentialsURL',
+                        'webviewReturnURL',
+                        'webviewResumeURL',
+                        'allowSelfServiceAccountManagementURL'
+                    ]),
+                    resourcesProxy: readAttributes(xmlDocument, 'resourcesProxy', ['listURL', 'resourceDetails']),
+                    protocolHandler: readAttributes(xmlDocument, 'protocolHandler', ['enabled']),
+                    workspaceControl: readAttributes(xmlDocument, 'workspaceControl', ['enabled'])
+                };
+
+                const pluginAssistantElement = xmlDocument.getElementsByTagName('pluginAssistant')[0];
+                if (pluginAssistantElement) {
+                    const html5Element = pluginAssistantElement.getElementsByTagName('html5')[0];
+                    if (html5Element) {
+                        configuration.pluginAssistant = {
+                            html5Enabled: html5Element.getAttribute('enabled') || ''
+                        };
+                    }
+                }
+
+                return configuration;
+            };
+
+            const renderApplications = (resources) => {
+                appListElement.innerHTML = '';
+                emptyStateElement.classList.add('d-none');
+                emptyStateElement.textContent = '';
+
+                for (const resource of resources) {
+                    const iconUrl = resource.iconurl ? joinUrl(normalizedBaseUrl, resource.iconurl) : '';
+
+                    const listItem = document.createElement('li');
+                    listItem.className = 'citrix-app-item';
+
+                    const image = document.createElement('img');
+                    image.className = 'citrix-app-icon';
+                    image.alt = resource.name || 'Citrix aplikace';
+                    image.loading = 'lazy';
+                    image.referrerPolicy = 'no-referrer';
+                    image.src = iconUrl || 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw==';
+                    image.addEventListener('error', () => {
+                        log.warn(`Ikona se nepodařila načíst pro aplikaci "${resource.name || '(bez názvu)'}": ${iconUrl || '(prázdná iconurl)'}`);
+                    });
+
+                    const name = document.createElement('div');
+                    name.className = 'citrix-app-name';
+                    name.textContent = resource.name || '(bez názvu)';
+
+                    listItem.appendChild(image);
+                    listItem.appendChild(name);
+                    appListElement.appendChild(listItem);
+                }
+            };
+
+            const showEmptyState = (message) => {
+                appListElement.innerHTML = '';
+                emptyStateElement.textContent = message;
+                emptyStateElement.classList.remove('d-none');
+            };
+
+            const looksLikeUnauthorized = (response, responseText) => {
+                const body = (responseText || '').toLowerCase();
+                const finalUrl = (response.url || '').toLowerCase();
+                const challengeHeader = (response.headers.get('CitrixWebReceiver-Authenticate') || '').toLowerCase();
+
+                return response.status === 401
+                    || response.status === 403
+                    || response.redirected
+                    || challengeHeader.includes('tokenrequired')
+                    || body.includes('"unauthorized":true')
+                    || body.includes('"unauthorized": true')
+                    || body.includes('getauthmethods')
+                    || body.includes('explicitauth')
+                    || body.includes('log on')
+                    || finalUrl.includes('/authentication/')
+                    || finalUrl.includes('/explicitauth/');
+            };
+
+            const run = async () => {
+                log.info('JS init started');
+                log.info(`Panel title: ${root.dataset.panelTitle || '(neznámý)'}`);
+                log.info(`Použitá Citrix URL: ${rawBaseUrl || '(není nastaveno)'}`);
+                log.info(`Normalizovaná Citrix URL: ${normalizedBaseUrl || '(není nastaveno)'}`);
+                log.info(`BodyPreviewLimit: ${bodyPreviewLimit}`);
+
+                if (!normalizedBaseUrl) {
+                    setStatus('Citrix BaseUrl není nastavená.', 'error');
+                    log.error('Konfigurace CitrixDiagnostics:BaseUrl chybí. Requesty se nespustí.');
+                    showEmptyState('Chybí konfigurace Citrix URL.');
+                    return;
+                }
+
+                const httpsHeaderValue = normalizedBaseUrl.startsWith('https://') ? 'Yes' : 'No';
+                log.info(`X-Citrix-IsUsingHTTPS bude odeslán s hodnotou "${httpsHeaderValue}".`);
+
+                setStatus('Načítám Citrix konfiguraci…', 'info');
+
+                const configurationUrl = joinUrl(normalizedBaseUrl, 'Home/Configuration');
+                const configurationResponse = await fetch(configurationUrl, {
+                    method: 'POST',
+                    body: '',
+                    credentials: 'include',
+                    headers: {
+                        'X-Citrix-IsUsingHTTPS': httpsHeaderValue
+                    }
+                }).catch((error) => {
+                    setStatus('Nepodařilo se načíst konfiguraci.', 'error');
+                    log.error(`Home/Configuration fetch selhal. Pravděpodobně CORS / cookies / SameSite / certifikát / síť. Detail: ${error instanceof Error ? error.message : String(error)}`);
+                    showEmptyState('Konfigurace Citrixu se nepodařila načíst.');
+                    throw error;
+                });
+
+                const configurationText = await configurationResponse.text();
+                logResponse('Home/Configuration', configurationUrl, 'POST', configurationResponse, configurationText);
+
+                const csrfToken = getCookieValue('CsrfToken');
+                if (csrfToken) {
+                    log.info(`CsrfToken nalezen v document.cookie: ${csrfToken}`);
+                } else {
+                    log.warn('CsrfToken nebyl nalezen v document.cookie. To je očekávatelné při cross-origin scénáři z localhostu.');
+                }
+
+                let parsedConfiguration;
+                try {
+                    parsedConfiguration = parseConfiguration(configurationText);
+                    log.info(`Konfigurace úspěšně rozparsována: ${getSafeJsonPreview(parsedConfiguration)}`);
+                } catch (error) {
+                    setStatus('Nepodařilo se načíst konfiguraci.', 'error');
+                    log.error(`Parsování XML konfigurace selhalo: ${error instanceof Error ? error.message : String(error)}`);
+                    showEmptyState('Konfiguraci StoreFrontu nešlo rozparsovat.');
+                    return;
+                }
+
+                const discoveredUrls = {
+                    getAuthMethods: parsedConfiguration.authentication?.locationURL
+                        ? joinUrl(normalizedBaseUrl, parsedConfiguration.authentication.locationURL)
+                        : '',
+                    getUserName: parsedConfiguration.authManager?.getUsernameURL
+                        ? joinUrl(normalizedBaseUrl, parsedConfiguration.authManager.getUsernameURL)
+                        : '',
+                    list: parsedConfiguration.resourcesProxy?.listURL
+                        ? joinUrl(normalizedBaseUrl, parsedConfiguration.resourcesProxy.listURL)
+                        : joinUrl(normalizedBaseUrl, 'Resources/List')
+                };
+
+                log.info(`Nalezené endpointy: ${getSafeJsonPreview(discoveredUrls)}`);
+
+                setStatus('Načítám seznam aplikací…', 'info');
+
+                const listUrl = discoveredUrls.list;
+                const listHeaders = {
+                    'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
+                    'X-Citrix-IsUsingHTTPS': httpsHeaderValue
+                };
+
+                if (csrfToken) {
+                    listHeaders['Csrf-Token'] = csrfToken;
+                }
+
+                log.info(`Resources/List request headers: ${getSafeJsonPreview(listHeaders)}`);
+
+                const listResponse = await fetch(listUrl, {
+                    method: 'POST',
+                    credentials: 'include',
+                    headers: listHeaders,
+                    body: new URLSearchParams({
+                        format: 'json',
+                        resourceDetails: 'Default'
+                    })
+                }).catch((error) => {
+                    setStatus('Nepodařilo se načíst seznam aplikací.', 'error');
+                    log.error(`Resources/List fetch selhal. Pravděpodobně CORS / cookies / SameSite / certifikát / síť. Detail: ${error instanceof Error ? error.message : String(error)}`);
+                    showEmptyState('Seznam aplikací se nepodařilo načíst.');
+                    throw error;
+                });
+
+                const listText = await listResponse.text();
+                logResponse('Resources/List', listUrl, 'POST', listResponse, listText);
+
+                if (looksLikeUnauthorized(listResponse, listText)) {
+                    setStatus('Uživatel není přihlášený do Citrixu.', 'warn');
+                    log.warn('Resources/List vypadá jako unauthorized / auth challenge / redirect na login.');
+                    showEmptyState('Uživatel není přihlášený do Citrixu nebo session nebyla z browseru použita.');
+                    return;
+                }
+
+                let parsedResourcesResponse;
+                try {
+                    parsedResourcesResponse = JSON.parse(listText);
+                } catch (error) {
+                    setStatus('Nepodařilo se načíst seznam aplikací.', 'error');
+                    log.error(`Parsování JSON z Resources/List selhalo: ${error instanceof Error ? error.message : String(error)}`);
+                    showEmptyState('Odpověď Resources/List nebyla validní JSON.');
+                    return;
+                }
+
+                const resources = Array.isArray(parsedResourcesResponse)
+                    ? parsedResourcesResponse
+                    : Array.isArray(parsedResourcesResponse.resources)
+                        ? parsedResourcesResponse.resources
+                        : null;
+
+                if (!resources) {
+                    setStatus('Nepodařilo se načíst seznam aplikací.', 'error');
+                    log.error(`Resources/List vrátil nečekaný tvar odpovědi: ${getSafeJsonPreview(parsedResourcesResponse)}`);
+                    showEmptyState('Odpověď Resources/List měla nečekaný formát.');
+                    return;
+                }
+
+                log.info(`Počet načtených aplikací: ${resources.length}`);
+                log.info(`První 1-2 položky: ${getSafeJsonPreview(resources.slice(0, 2))}`);
+
+                if (resources.length === 0) {
+                    setStatus('Žádné aplikace nebyly nalezeny.', 'warn');
+                    showEmptyState('Žádné aplikace nebyly nalezeny.');
+                    return;
+                }
+
+                for (const resource of resources.slice(0, 2)) {
+                    if (resource.launchurl) {
+                        log.info(`Launch URL pro "${resource.name || '(bez názvu)'}": ${resource.launchurl}`);
+                    }
+                }
+
+                renderApplications(resources);
+                setStatus(`Načteno ${resources.length} aplikací.`, 'success');
+            };
+
+            run().catch((error) => {
+                log.error(`Běh diagnostického PoC skončil výjimkou: ${error instanceof Error ? error.message : String(error)}`);
+            });
+        })();
+    </script>
+}

@@ -1,0 +1,7 @@
+C:\projects\eda7a1781910f6bf9943763C1tr1e18f9ece\PortalComponent\publish\PortalComponent.exe
+C:\projects\eda7a1781910f6bf9943763C1tr1e18f9ece\PortalComponent\publish\appsettings.Development.json
+C:\projects\eda7a1781910f6bf9943763C1tr1e18f9ece\PortalComponent\publish\appsettings.json
+C:\projects\eda7a1781910f6bf9943763C1tr1e18f9ece\PortalComponent\publish\PortalComponent.dll
+C:\projects\eda7a1781910f6bf9943763C1tr1e18f9ece\PortalComponent\publish\PortalComponent.deps.json
+C:\projects\eda7a1781910f6bf9943763C1tr1e18f9ece\PortalComponent\publish\PortalComponent.runtimeconfig.json
+C:\projects\eda7a1781910f6bf9943763C1tr1e18f9ece\PortalComponent\publish\PortalComponent.pdb

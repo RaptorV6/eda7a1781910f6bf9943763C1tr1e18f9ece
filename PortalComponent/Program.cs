@@ -270,6 +270,7 @@ app.MapPost("/api/citrix-diagnostics/server-probe", async (
 
 app.MapPost("/api/citrix-diagnostics/explicit-login", async (
     CitrixLoginRequest loginRequest,
+    HttpContext httpContext,
     ILoggerFactory loggerFactory,
     CancellationToken cancellationToken) =>
 {
@@ -315,6 +316,8 @@ app.MapPost("/api/citrix-diagnostics/explicit-login", async (
     var httpsHeaderValue = string.Equals(storeRootUri.Scheme, Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase)
         ? "Yes"
         : "No";
+    var forwardedAcceptLanguage = httpContext.Request.Headers.AcceptLanguage.ToString();
+    var forwardedUserAgent = httpContext.Request.Headers.UserAgent.ToString();
 
     var explicitLoginUri = new Uri(storeRootUri, "ExplicitAuth/Login");
     var loginAttemptUri = new Uri(storeRootUri, "ExplicitAuth/LoginAttempt");
@@ -356,7 +359,7 @@ app.MapPost("/api/citrix-diagnostics/explicit-login", async (
         using (var bootstrapRequest = CitrixExplicitAuth.CreateRequest(
             HttpMethod.Get,
             storeRootUri,
-            CitrixExplicitAuth.CreateBaseHeaders(storeRootUri, storeRootUri, httpsHeaderValue)))
+            CitrixExplicitAuth.CreateBaseHeaders(storeRootUri, storeRootUri, httpsHeaderValue, acceptLanguage: forwardedAcceptLanguage, userAgent: forwardedUserAgent)))
         using (var bootstrapResponse = await client.SendAsync(bootstrapRequest, cancellationToken))
         {
             bootstrapStatusCode = bootstrapResponse.StatusCode;
@@ -384,7 +387,7 @@ app.MapPost("/api/citrix-diagnostics/explicit-login", async (
                     using var landingRequest = CitrixExplicitAuth.CreateRequest(
                         HttpMethod.Get,
                         nextBootstrapUri,
-                        CitrixExplicitAuth.CreateBaseHeaders(storeRootUri, nextBootstrapUri, httpsHeaderValue));
+                        CitrixExplicitAuth.CreateBaseHeaders(storeRootUri, nextBootstrapUri, httpsHeaderValue, acceptLanguage: forwardedAcceptLanguage, userAgent: forwardedUserAgent));
                     using var landingResponse = await client.SendAsync(landingRequest, cancellationToken);
                     var landingBody = await landingResponse.Content.ReadAsStringAsync(cancellationToken);
 
@@ -404,7 +407,7 @@ app.MapPost("/api/citrix-diagnostics/explicit-login", async (
             }
         }
 
-        var authMethodsHeaders = CitrixExplicitAuth.CreateBaseHeaders(storeRootUri, authMethodsUri, httpsHeaderValue);
+        var authMethodsHeaders = CitrixExplicitAuth.CreateBaseHeaders(storeRootUri, authMethodsUri, httpsHeaderValue, acceptLanguage: forwardedAcceptLanguage, userAgent: forwardedUserAgent);
         authMethodsHeaders["X-Citrix-AM-CredentialTypes"] = CitrixExplicitAuth.FormCredentialTypes;
         authMethodsHeaders["X-Citrix-AM-LabelTypes"] = CitrixExplicitAuth.FormLabelTypes;
 
@@ -470,7 +473,7 @@ app.MapPost("/api/citrix-diagnostics/explicit-login", async (
         loginPostUrl = loginAttemptUri.ToString();
         loginFormPreview = "Direct LoginAttempt flow selected from captured browser HAR; no separate login-form fetch was performed.";
 
-        var loginSubmitHeaders = CitrixExplicitAuth.CreateBaseHeaders(storeRootUri, loginAttemptUri, httpsHeaderValue, currentCsrfToken);
+        var loginSubmitHeaders = CitrixExplicitAuth.CreateBaseHeaders(storeRootUri, loginAttemptUri, httpsHeaderValue, currentCsrfToken, forwardedAcceptLanguage, forwardedUserAgent);
         loginSubmitHeaders["X-Citrix-AM-CredentialTypes"] = CitrixExplicitAuth.FormCredentialTypes;
         loginSubmitHeaders["X-Citrix-AM-LabelTypes"] = CitrixExplicitAuth.FormLabelTypes;
 
@@ -541,7 +544,7 @@ app.MapPost("/api/citrix-diagnostics/explicit-login", async (
             });
         }
 
-        var resourcesHeaders = CitrixExplicitAuth.CreateBaseHeaders(storeRootUri, resourcesUri, httpsHeaderValue, currentCsrfToken);
+        var resourcesHeaders = CitrixExplicitAuth.CreateBaseHeaders(storeRootUri, resourcesUri, httpsHeaderValue, currentCsrfToken, forwardedAcceptLanguage, forwardedUserAgent);
 
         using (var resourcesRequest = CitrixExplicitAuth.CreateRequest(
             HttpMethod.Post,
@@ -674,7 +677,13 @@ internal static class CitrixExplicitAuth
     public const string FormCredentialTypes = "none, username, domain, password, newpassword, passcode, savecredentials, textcredential, webview, webview";
     public const string FormLabelTypes = "none, plain, heading, information, warning, error, confirmation, image";
 
-    public static Dictionary<string, string> CreateBaseHeaders(Uri storeRootUri, Uri requestUri, string httpsHeaderValue, string? csrfToken = null)
+    public static Dictionary<string, string> CreateBaseHeaders(
+        Uri storeRootUri,
+        Uri requestUri,
+        string httpsHeaderValue,
+        string? csrfToken = null,
+        string? acceptLanguage = null,
+        string? userAgent = null)
     {
         var headers = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
         {
@@ -682,6 +691,8 @@ internal static class CitrixExplicitAuth
             ["Citrix-TransactionId"] = Guid.NewGuid().ToString(),
             ["Origin"] = $"{storeRootUri.Scheme}://{storeRootUri.Authority}",
             ["Referer"] = storeRootUri.ToString(),
+            ["Cache-Control"] = "no-cache",
+            ["Pragma"] = "no-cache",
             ["X-Citrix-IsUsingHTTPS"] = httpsHeaderValue,
             ["X-Requested-With"] = "XMLHttpRequest"
         };
@@ -689,6 +700,16 @@ internal static class CitrixExplicitAuth
         if (!string.IsNullOrWhiteSpace(csrfToken))
         {
             headers["Csrf-Token"] = csrfToken;
+        }
+
+        if (!string.IsNullOrWhiteSpace(acceptLanguage))
+        {
+            headers["Accept-Language"] = acceptLanguage;
+        }
+
+        if (!string.IsNullOrWhiteSpace(userAgent))
+        {
+            headers["User-Agent"] = userAgent;
         }
 
         return headers;

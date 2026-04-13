@@ -273,6 +273,32 @@
                 }
             };
 
+            const createTransactionId = () => {
+                if (window.crypto && typeof window.crypto.randomUUID === 'function') {
+                    return window.crypto.randomUUID();
+                }
+
+                return `diag-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+            };
+
+            const createCitrixHeaders = ({ httpsHeaderValue, csrfToken = '', includeContentType = false } = {}) => {
+                const headers = {
+                    'Citrix-TransactionId': createTransactionId(),
+                    'X-Citrix-IsUsingHTTPS': httpsHeaderValue,
+                    'X-Requested-With': 'XMLHttpRequest'
+                };
+
+                if (includeContentType) {
+                    headers['Content-Type'] = 'application/x-www-form-urlencoded; charset=UTF-8';
+                }
+
+                if (csrfToken) {
+                    headers['Csrf-Token'] = csrfToken;
+                }
+
+                return headers;
+            };
+
             const logResponse = (stepName, requestUrl, method, response, responseText) => {
                 log.info(stepName, `request ${method} ${requestUrl}`);
                 log.info(stepName, `status ${response.status} ${response.statusText || ''}`.trim());
@@ -354,6 +380,7 @@
                         body: JSON.stringify({
                             requestId,
                             step: stepName,
+                            storeRootUrl: normalizedBaseUrl,
                             url: requestUrl,
                             method: requestOptions.method || 'GET',
                             body: bodyValue,
@@ -510,17 +537,21 @@
 
                 const httpsHeaderValue = normalizedBaseUrl.startsWith('https://') ? 'Yes' : 'No';
                 log.info('Init', `X-Citrix-IsUsingHTTPS bude odeslán s hodnotou "${httpsHeaderValue}".`);
+                log.info('Init', 'Browser fetch z localhostu neumí nasimulovat same-origin Citrix session. Když přímý fetch spadne na CORS nebo SameSite, server-side probe zkusí bootstrap přes GET store root.');
 
                 setStatus('Načítám Citrix konfiguraci…', 'info');
 
                 const configurationUrl = joinUrl(normalizedBaseUrl, 'Home/Configuration');
+                const configurationHeaders = createCitrixHeaders({
+                    httpsHeaderValue
+                });
+                log.info('Home/Configuration', `Request headers: ${getSafeJsonPreview(configurationHeaders)}`);
+
                 const configurationResult = await runProbe('Home/Configuration', configurationUrl, {
                     method: 'POST',
                     body: '',
                     credentials: 'include',
-                    headers: {
-                        'X-Citrix-IsUsingHTTPS': httpsHeaderValue
-                    }
+                    headers: configurationHeaders
                 }).catch((error) => {
                     setStatus('Nepodařilo se načíst konfiguraci.', 'error');
                     log.error('Home/Configuration', `Fetch selhal. Pravděpodobně CORS / cookies / SameSite / certifikát / síť. Detail: ${error instanceof Error ? error.message : String(error)}`);
@@ -528,9 +559,7 @@
                         method: 'POST',
                         body: '',
                         credentials: 'include',
-                        headers: {
-                            'X-Citrix-IsUsingHTTPS': httpsHeaderValue
-                        }
+                        headers: configurationHeaders
                     });
                     showEmptyState('Konfigurace Citrixu se nepodařila načíst.');
                     throw error;
@@ -571,13 +600,15 @@
                 log.info('DiscoveredEndpoints', `Nalezené endpointy: ${getSafeJsonPreview(discoveredUrls)}`);
 
                 if (discoveredUrls.getAuthMethods) {
+                    const authMethodHeaders = createCitrixHeaders({
+                        httpsHeaderValue
+                    });
+
                     await runProbe('Authentication/GetAuthMethods', discoveredUrls.getAuthMethods, {
                         method: 'POST',
                         body: '',
                         credentials: 'include',
-                        headers: {
-                            'X-Citrix-IsUsingHTTPS': httpsHeaderValue
-                        }
+                        headers: authMethodHeaders
                     }).catch((error) => {
                         log.warn('Authentication/GetAuthMethods', `Diagnostický probe selhal: ${error instanceof Error ? error.message : String(error)}`);
                     });
@@ -586,12 +617,16 @@
                 }
 
                 if (discoveredUrls.getUserName) {
+                    const getUserNameHeaders = createCitrixHeaders({
+                        httpsHeaderValue,
+                        csrfToken
+                    });
+
                     await runProbe('Authentication/GetUserName', discoveredUrls.getUserName, {
-                        method: 'GET',
+                        method: 'POST',
+                        body: '',
                         credentials: 'include',
-                        headers: {
-                            'X-Citrix-IsUsingHTTPS': httpsHeaderValue
-                        }
+                        headers: getUserNameHeaders
                     }).catch((error) => {
                         log.warn('Authentication/GetUserName', `Diagnostický probe selhal: ${error instanceof Error ? error.message : String(error)}`);
                     });
@@ -602,14 +637,11 @@
                 setStatus('Načítám seznam aplikací…', 'info');
 
                 const listUrl = discoveredUrls.list;
-                const listHeaders = {
-                    'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
-                    'X-Citrix-IsUsingHTTPS': httpsHeaderValue
-                };
-
-                if (csrfToken) {
-                    listHeaders['Csrf-Token'] = csrfToken;
-                }
+                const listHeaders = createCitrixHeaders({
+                    httpsHeaderValue,
+                    csrfToken,
+                    includeContentType: true
+                });
 
                 log.info('Resources/List', `Request headers: ${getSafeJsonPreview(listHeaders)}`);
 

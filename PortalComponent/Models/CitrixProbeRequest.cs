@@ -6,6 +6,8 @@ public sealed class CitrixProbeRequest
 
     public string Step { get; init; } = string.Empty;
 
+    public string StoreRootUrl { get; init; } = string.Empty;
+
     public string Url { get; init; } = string.Empty;
 
     public string Method { get; init; } = "GET";

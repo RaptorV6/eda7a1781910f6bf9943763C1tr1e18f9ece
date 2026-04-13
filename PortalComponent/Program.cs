@@ -1,19 +1,11 @@
 using PortalComponent.Models;
 using System.Net;
-using System.Net.Http.Headers;
 using System.Text;
 
 var builder = WebApplication.CreateBuilder(args);
 
 // Add services to the container.
 builder.Services.AddRazorPages();
-builder.Services.AddHttpClient("CitrixDiagnosticsProbe")
-    .ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler
-    {
-        AllowAutoRedirect = false,
-        UseCookies = false,
-        AutomaticDecompression = DecompressionMethods.All
-    });
 
 var app = builder.Build();
 
@@ -60,43 +52,148 @@ app.MapPost("/api/citrix-diagnostics/client-log", (
 
 app.MapPost("/api/citrix-diagnostics/server-probe", async (
     CitrixProbeRequest probeRequest,
-    IHttpClientFactory httpClientFactory,
     ILoggerFactory loggerFactory,
     CancellationToken cancellationToken) =>
 {
     var logger = loggerFactory.CreateLogger("CitrixServerProbe");
-    var client = httpClientFactory.CreateClient("CitrixDiagnosticsProbe");
-    client.Timeout = TimeSpan.FromSeconds(20);
-
-    var requestMessage = new HttpRequestMessage(new HttpMethod(probeRequest.Method), probeRequest.Url);
-
-    foreach (var header in probeRequest.Headers)
+    if (!Uri.TryCreate(probeRequest.Url, UriKind.Absolute, out var requestUri))
     {
-        if (!requestMessage.Headers.TryAddWithoutValidation(header.Key, header.Value))
+        return Results.Ok(new CitrixProbeResponse
         {
-            requestMessage.Content ??= new StringContent(probeRequest.Body ?? string.Empty, Encoding.UTF8, probeRequest.ContentType ?? "text/plain");
-            requestMessage.Content.Headers.TryAddWithoutValidation(header.Key, header.Value);
-        }
+            Ok = false,
+            RequestId = probeRequest.RequestId,
+            Step = probeRequest.Step,
+            ErrorType = "InvalidUrl",
+            ErrorMessage = $"Probe URL není validní absolutní URI: {probeRequest.Url}"
+        });
     }
 
-    if (!string.IsNullOrEmpty(probeRequest.Body) && requestMessage.Content is null)
+    var storeRootCandidate = string.IsNullOrWhiteSpace(probeRequest.StoreRootUrl)
+        ? new Uri(requestUri, ".").ToString()
+        : probeRequest.StoreRootUrl;
+
+    if (!Uri.TryCreate(storeRootCandidate, UriKind.Absolute, out var storeRootUri))
     {
-        requestMessage.Content = new StringContent(
-            probeRequest.Body,
-            Encoding.UTF8,
-            probeRequest.ContentType ?? "application/x-www-form-urlencoded; charset=UTF-8");
+        return Results.Ok(new CitrixProbeResponse
+        {
+            Ok = false,
+            RequestId = probeRequest.RequestId,
+            Step = probeRequest.Step,
+            ErrorType = "InvalidStoreRootUrl",
+            ErrorMessage = $"Store root URL není validní absolutní URI: {storeRootCandidate}"
+        });
     }
+
+    using var handler = new HttpClientHandler
+    {
+        AllowAutoRedirect = false,
+        UseCookies = true,
+        CookieContainer = new CookieContainer(),
+        AutomaticDecompression = DecompressionMethods.All
+    };
+
+    using var client = new HttpClient(handler)
+    {
+        Timeout = TimeSpan.FromSeconds(20)
+    };
+
+    var bootstrapCookieNames = Array.Empty<string>();
+    string? bootstrapCsrfToken = null;
+    HttpStatusCode? bootstrapStatusCode = null;
+    string bootstrapReasonPhrase = string.Empty;
+    string bootstrapFinalUrl = string.Empty;
 
     logger.LogInformation(
-        "Citrix server probe started. RequestId: {RequestId}. Step: {Step}. Method: {Method}. Url: {Url}. HeaderCount: {HeaderCount}",
+        "Citrix server probe started. RequestId: {RequestId}. Step: {Step}. Method: {Method}. Url: {Url}. StoreRootUrl: {StoreRootUrl}. HeaderCount: {HeaderCount}",
         probeRequest.RequestId,
         probeRequest.Step,
         probeRequest.Method,
         probeRequest.Url,
+        storeRootUri,
         probeRequest.Headers.Count);
 
     try
     {
+        using (var bootstrapRequest = new HttpRequestMessage(HttpMethod.Get, storeRootUri))
+        using (var bootstrapResponse = await client.SendAsync(bootstrapRequest, cancellationToken))
+        {
+            bootstrapStatusCode = bootstrapResponse.StatusCode;
+            bootstrapReasonPhrase = bootstrapResponse.ReasonPhrase ?? string.Empty;
+            bootstrapFinalUrl = bootstrapResponse.RequestMessage?.RequestUri?.ToString() ?? storeRootUri.ToString();
+
+            var bootstrapCookies = handler.CookieContainer.GetCookies(storeRootUri).Cast<Cookie>().ToArray();
+            bootstrapCookieNames = bootstrapCookies.Select(cookie => cookie.Name).Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
+            bootstrapCsrfToken = bootstrapCookies
+                .FirstOrDefault(cookie => string.Equals(cookie.Name, "CsrfToken", StringComparison.OrdinalIgnoreCase))
+                ?.Value;
+
+            logger.LogInformation(
+                "Citrix bootstrap completed. RequestId: {RequestId}. Step: {Step}. StatusCode: {StatusCode}. ReasonPhrase: {ReasonPhrase}. FinalUrl: {FinalUrl}. Cookies: {Cookies}. CsrfTokenFound: {CsrfTokenFound}",
+                probeRequest.RequestId,
+                probeRequest.Step,
+                (int)bootstrapResponse.StatusCode,
+                bootstrapReasonPhrase,
+                bootstrapFinalUrl,
+                string.Join(", ", bootstrapCookieNames),
+                !string.IsNullOrWhiteSpace(bootstrapCsrfToken));
+        }
+
+        using var requestMessage = new HttpRequestMessage(new HttpMethod(probeRequest.Method), requestUri);
+        var requestHeaders = new Dictionary<string, string>(probeRequest.Headers, StringComparer.OrdinalIgnoreCase);
+
+        if (!requestHeaders.ContainsKey("X-Requested-With"))
+        {
+            requestHeaders["X-Requested-With"] = "XMLHttpRequest";
+        }
+
+        if (!requestHeaders.ContainsKey("Citrix-TransactionId"))
+        {
+            requestHeaders["Citrix-TransactionId"] = Guid.NewGuid().ToString();
+        }
+
+        if (!requestHeaders.ContainsKey("Origin"))
+        {
+            requestHeaders["Origin"] = $"{requestUri.Scheme}://{requestUri.Authority}";
+        }
+
+        if (!requestHeaders.ContainsKey("Referer"))
+        {
+            requestHeaders["Referer"] = storeRootUri.ToString();
+        }
+
+        if (!requestHeaders.ContainsKey("Csrf-Token") && !string.IsNullOrWhiteSpace(bootstrapCsrfToken))
+        {
+            requestHeaders["Csrf-Token"] = bootstrapCsrfToken;
+        }
+
+        var bodyValue = probeRequest.Body ?? string.Empty;
+        var contentType = probeRequest.ContentType;
+
+        if ((probeRequest.Method.Equals("POST", StringComparison.OrdinalIgnoreCase)
+                || probeRequest.Method.Equals("PUT", StringComparison.OrdinalIgnoreCase)
+                || probeRequest.Method.Equals("PATCH", StringComparison.OrdinalIgnoreCase))
+            && requestMessage.Content is null)
+        {
+            requestMessage.Content = string.IsNullOrWhiteSpace(contentType)
+                ? new StringContent(bodyValue, Encoding.UTF8)
+                : new StringContent(bodyValue, Encoding.UTF8, contentType);
+        }
+
+        foreach (var header in requestHeaders)
+        {
+            if (string.Equals(header.Key, "Content-Length", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(header.Key, "Host", StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            if (!requestMessage.Headers.TryAddWithoutValidation(header.Key, header.Value))
+            {
+                requestMessage.Content ??= new StringContent(bodyValue, Encoding.UTF8);
+                requestMessage.Content.Headers.TryAddWithoutValidation(header.Key, header.Value);
+            }
+        }
+
         using var response = await client.SendAsync(requestMessage, cancellationToken);
         var responseBody = await response.Content.ReadAsStringAsync(cancellationToken);
         var responseHeaders = response.Headers
@@ -122,6 +219,11 @@ app.MapPost("/api/citrix-diagnostics/server-probe", async (
             FinalUrl = response.RequestMessage?.RequestUri?.ToString() ?? probeRequest.Url,
             ContentType = response.Content.Headers.ContentType?.ToString() ?? string.Empty,
             Headers = responseHeaders,
+            BootstrapStatusCode = bootstrapStatusCode is null ? null : (int)bootstrapStatusCode.Value,
+            BootstrapReasonPhrase = bootstrapReasonPhrase,
+            BootstrapFinalUrl = bootstrapFinalUrl,
+            BootstrapCookieNames = bootstrapCookieNames,
+            BootstrapCsrfTokenFound = !string.IsNullOrWhiteSpace(bootstrapCsrfToken),
             BodyPreview = responseBody.Length > 1200 ? responseBody[..1200] + "... [zkráceno]" : responseBody
         });
     }
@@ -140,6 +242,11 @@ app.MapPost("/api/citrix-diagnostics/server-probe", async (
             Ok = false,
             RequestId = probeRequest.RequestId,
             Step = probeRequest.Step,
+            BootstrapStatusCode = bootstrapStatusCode is null ? null : (int)bootstrapStatusCode.Value,
+            BootstrapReasonPhrase = bootstrapReasonPhrase,
+            BootstrapFinalUrl = bootstrapFinalUrl,
+            BootstrapCookieNames = bootstrapCookieNames,
+            BootstrapCsrfTokenFound = !string.IsNullOrWhiteSpace(bootstrapCsrfToken),
             ErrorType = exception.GetType().FullName ?? exception.GetType().Name,
             ErrorMessage = exception.Message,
             InnerErrorMessage = exception.InnerException?.Message ?? string.Empty

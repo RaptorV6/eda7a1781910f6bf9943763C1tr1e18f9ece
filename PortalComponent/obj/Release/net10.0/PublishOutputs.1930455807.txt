@@ -1,0 +1,7 @@
+/workspaces/eda7a1781910f6bf9943763C1tr1e18f9ece/publish/PortalComponent
+/workspaces/eda7a1781910f6bf9943763C1tr1e18f9ece/publish/appsettings.Development.json
+/workspaces/eda7a1781910f6bf9943763C1tr1e18f9ece/publish/appsettings.json
+/workspaces/eda7a1781910f6bf9943763C1tr1e18f9ece/publish/PortalComponent.dll
+/workspaces/eda7a1781910f6bf9943763C1tr1e18f9ece/publish/PortalComponent.deps.json
+/workspaces/eda7a1781910f6bf9943763C1tr1e18f9ece/publish/PortalComponent.runtimeconfig.json
+/workspaces/eda7a1781910f6bf9943763C1tr1e18f9ece/publish/PortalComponent.pdb

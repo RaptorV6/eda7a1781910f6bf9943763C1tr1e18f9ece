@@ -8,19 +8,19 @@
     "net10.0": []
   },
   "packageFolders": {
-    "C:\\Users\\van-d\\.nuget\\packages\\": {}
+    "/home/codespace/.nuget/packages/": {}
   },
   "project": {
     "version": "1.0.0",
     "restore": {
-      "projectUniqueName": "C:\\projects\\eda7a1781910f6bf9943763C1tr1e18f9ece\\PortalComponent\\PortalComponent.csproj",
+      "projectUniqueName": "/workspaces/eda7a1781910f6bf9943763C1tr1e18f9ece/PortalComponent/PortalComponent.csproj",
       "projectName": "PortalComponent",
-      "projectPath": "C:\\projects\\eda7a1781910f6bf9943763C1tr1e18f9ece\\PortalComponent\\PortalComponent.csproj",
-      "packagesPath": "C:\\Users\\van-d\\.nuget\\packages\\",
-      "outputPath": "C:\\projects\\eda7a1781910f6bf9943763C1tr1e18f9ece\\PortalComponent\\obj\\",
+      "projectPath": "/workspaces/eda7a1781910f6bf9943763C1tr1e18f9ece/PortalComponent/PortalComponent.csproj",
+      "packagesPath": "/home/codespace/.nuget/packages/",
+      "outputPath": "/workspaces/eda7a1781910f6bf9943763C1tr1e18f9ece/PortalComponent/obj/",
       "projectStyle": "PackageReference",
       "configFilePaths": [
-        "C:\\Users\\van-d\\AppData\\Roaming\\NuGet\\NuGet.Config"
+        "/home/codespace/.nuget/NuGet/NuGet.Config"
       ],
       "originalTargetFrameworks": [
         "net10.0"
@@ -44,7 +44,7 @@
         "auditLevel": "low",
         "auditMode": "all"
       },
-      "SdkAnalysisLevel": "10.0.200"
+      "SdkAnalysisLevel": "10.0.100"
     },
     "frameworks": {
       "net10.0": {
@@ -68,7 +68,7 @@
             "privateAssets": "all"
           }
         },
-        "runtimeIdentifierGraphPath": "C:\\Program Files\\dotnet\\sdk\\10.0.201/PortableRuntimeIdentifierGraph.json",
+        "runtimeIdentifierGraphPath": "/usr/share/dotnet/sdk/10.0.100/PortableRuntimeIdentifierGraph.json",
         "packagesToPrune": {
           "Microsoft.AspNetCore": "(,10.0.32767]",
           "Microsoft.AspNetCore.Antiforgery": "(,10.0.32767]",

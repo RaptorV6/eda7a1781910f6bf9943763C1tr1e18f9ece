@@ -63,6 +63,65 @@
         color: #047857;
     }
 
+    .citrix-login-form {
+        margin-bottom: 1rem;
+        border: 1px solid #d9e2ec;
+        border-radius: 0.85rem;
+        background: #f8fafc;
+        padding: 1rem;
+    }
+
+    .citrix-login-grid {
+        display: grid;
+        gap: 0.85rem;
+        grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    }
+
+    .citrix-login-field {
+        display: flex;
+        flex-direction: column;
+        gap: 0.35rem;
+    }
+
+    .citrix-login-field label {
+        font-weight: 600;
+        color: #243b53;
+    }
+
+    .citrix-login-field input {
+        border: 1px solid #cbd5e1;
+        border-radius: 0.65rem;
+        padding: 0.7rem 0.8rem;
+        background: #ffffff;
+    }
+
+    .citrix-login-actions {
+        margin-top: 0.85rem;
+        display: flex;
+        align-items: center;
+        gap: 0.75rem;
+        flex-wrap: wrap;
+    }
+
+    .citrix-login-button {
+        border: 0;
+        border-radius: 0.65rem;
+        background: #0f766e;
+        color: #ffffff;
+        font-weight: 700;
+        padding: 0.75rem 1rem;
+    }
+
+    .citrix-login-button:disabled {
+        opacity: 0.6;
+        cursor: wait;
+    }
+
+    .citrix-login-hint {
+        color: #52606d;
+        font-size: 0.95rem;
+    }
+
     .citrix-app-list {
         list-style: none;
         margin: 0;
@@ -125,6 +184,7 @@
      data-body-preview-limit="@Model.BodyPreviewLimit"
      data-client-log-endpoint="@Model.ClientLogEndpoint"
      data-server-probe-endpoint="@Model.ServerProbeEndpoint"
+     data-server-login-endpoint="@Model.ServerLoginEndpoint"
      data-request-id="@Model.DiagnosticRequestId">
     <div class="mb-3">
         <h1 class="citrix-diagnostics-title">@Model.PanelTitle</h1>
@@ -139,6 +199,27 @@
         Použitá Citrix URL:
         <code id="citrix-base-url">@configuredBaseUrl</code>
     </div>
+
+    <form id="citrix-login-form" class="citrix-login-form">
+        <div class="citrix-login-grid">
+            <div class="citrix-login-field">
+                <label for="citrix-username">Uživatelské jméno</label>
+                <input id="citrix-username" name="username" type="text" autocomplete="username" spellcheck="false" />
+            </div>
+            <div class="citrix-login-field">
+                <label for="citrix-password">Heslo</label>
+                <input id="citrix-password" name="password" type="password" autocomplete="current-password" />
+            </div>
+            <div class="citrix-login-field">
+                <label for="citrix-domain">Doména</label>
+                <input id="citrix-domain" name="domain" type="text" value="acr" spellcheck="false" />
+            </div>
+        </div>
+        <div class="citrix-login-actions">
+            <button id="citrix-login-button" class="citrix-login-button" type="submit">Přihlásit přes localhost</button>
+            <span class="citrix-login-hint">Credentials se odešlou jen na náš ASP.NET endpoint, který provede Citrix login na serveru.</span>
+        </div>
+    </form>
 
     <div id="citrix-status" class="citrix-diagnostics-status" data-level="info">Načítám Citrix konfiguraci…</div>
 
@@ -162,12 +243,18 @@
             const appListElement = document.getElementById('citrix-app-list');
             const emptyStateElement = document.getElementById('citrix-empty-state');
             const logElement = document.getElementById('citrix-log');
+            const loginFormElement = document.getElementById('citrix-login-form');
+            const usernameElement = document.getElementById('citrix-username');
+            const passwordElement = document.getElementById('citrix-password');
+            const domainElement = document.getElementById('citrix-domain');
+            const loginButtonElement = document.getElementById('citrix-login-button');
 
             const rawBaseUrl = (root.dataset.baseUrl || '').trim();
             const normalizedBaseUrl = rawBaseUrl ? rawBaseUrl.replace(/\/?$/, '/') : '';
             const bodyPreviewLimit = Number.parseInt(root.dataset.bodyPreviewLimit || '1200', 10) || 1200;
             const clientLogEndpoint = root.dataset.clientLogEndpoint || '';
             const serverProbeEndpoint = root.dataset.serverProbeEndpoint || '';
+            const serverLoginEndpoint = root.dataset.serverLoginEndpoint || '';
             const requestId = root.dataset.requestId || `client-${Date.now()}`;
             let clientLogSequence = 0;
 
@@ -347,7 +434,7 @@
             const runServerSideProbe = async (stepName, requestUrl, requestOptions) => {
                 if (!serverProbeEndpoint) {
                     log.warn(stepName, 'Server-side probe endpoint není nastaven.');
-                    return;
+                    return null;
                 }
 
                 const normalizedHeaders = {};
@@ -396,12 +483,50 @@
                         probePayload = JSON.parse(probeText);
                     } catch (error) {
                         log.error(stepName, `Server-side probe vrátil nevalidní JSON: ${truncate(probeText)}`);
-                        return;
+                        return null;
                     }
 
                     log.info(stepName, `Server-side probe výsledek: ${getSafeJsonPreview(probePayload)}`);
+                    return probePayload;
                 } catch (error) {
                     log.error(stepName, `Server-side probe selhal: ${error instanceof Error ? error.message : String(error)}`);
+                    return null;
+                }
+            };
+
+            const explainServerSideProbe = (stepName, probePayload) => {
+                if (!probePayload) {
+                    return;
+                }
+
+                const bootstrapLocation = probePayload.bootstrapHeaders?.Location || probePayload.bootstrapHeaders?.location || '';
+
+                if (probePayload.bootstrapStatusCode === 302 && bootstrapLocation) {
+                    log.warn(stepName, `Bootstrap store root skončil redirectem na ${bootstrapLocation}`);
+                }
+
+                if (probePayload.bootstrapStatusCode === 302
+                    && probePayload.bootstrapCsrfTokenFound === false
+                    && Array.isArray(probePayload.bootstrapCookieNames)
+                    && probePayload.bootstrapCookieNames.length > 0) {
+                    log.warn(
+                        stepName,
+                        `Server-side probe má jen gateway cookies (${probePayload.bootstrapCookieNames.join(', ')}), ale nezískal StoreFront CsrfToken. To je nová neautentizovaná session, ne vaše browser session.`
+                    );
+                }
+
+                if (probePayload.statusCode === 404 && probePayload.bootstrapCsrfTokenFound === false) {
+                    log.warn(
+                        stepName,
+                        'HTTP 404 tady není hlavní problém. Hlavní problém je chybějící authenticated StoreFront session a CSRF token.'
+                    );
+                }
+
+                if (window.location.origin !== new URL(normalizedBaseUrl).origin) {
+                    log.warn(
+                        stepName,
+                        'PortalComponent běží na jiném originu než Citrix StoreFront. Browser requesty proto narážejí na CORS/SameSite. Pro skutečné načtení aplikací je potřeba same-origin hostování nebo serverový login/proxy.'
+                    );
                 }
             };
 
@@ -498,6 +623,18 @@
                 emptyStateElement.classList.remove('d-none');
             };
 
+            const extractResources = (payload) => {
+                if (Array.isArray(payload)) {
+                    return payload;
+                }
+
+                if (Array.isArray(payload?.resources)) {
+                    return payload.resources;
+                }
+
+                return null;
+            };
+
             const looksLikeUnauthorized = (response, responseText) => {
                 const body = (responseText || '').toLowerCase();
                 const finalUrl = (response.url || '').toLowerCase();
@@ -516,6 +653,108 @@
                     || finalUrl.includes('/explicitauth/');
             };
 
+            const setLoginFormDisabled = (disabled) => {
+                if (!loginFormElement) {
+                    return;
+                }
+
+                for (const element of loginFormElement.elements) {
+                    element.disabled = disabled;
+                }
+            };
+
+            const runServerSideLogin = async () => {
+                if (!serverLoginEndpoint) {
+                    throw new Error('Server login endpoint není nastaven.');
+                }
+
+                const username = (usernameElement?.value || '').trim();
+                const password = passwordElement?.value || '';
+                const domain = (domainElement?.value || '').trim();
+
+                if (!username || !password || !domain) {
+                    throw new Error('Vyplňte uživatelské jméno, heslo i doménu.');
+                }
+
+                log.info('ExplicitLogin', `Spouštím server-side explicit login přes ${serverLoginEndpoint}`);
+                log.info('ExplicitLogin', `Odesílám username=${username}, domain=${domain}. Heslo se do logu nepropaguje.`);
+
+                const response = await fetch(serverLoginEndpoint, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        requestId,
+                        storeRootUrl: normalizedBaseUrl,
+                        username,
+                        password,
+                        domain
+                    })
+                });
+
+                const responseText = await response.text();
+                let payload;
+
+                try {
+                    payload = JSON.parse(responseText);
+                } catch (error) {
+                    throw new Error(`Server login vrátil nevalidní JSON: ${truncate(responseText)}`);
+                }
+
+                log.info('ExplicitLogin', `Server-side explicit login výsledek: ${getSafeJsonPreview(payload)}`);
+                return payload;
+            };
+
+            const handleLoginSubmit = async (event) => {
+                event.preventDefault();
+
+                appListElement.innerHTML = '';
+                emptyStateElement.classList.add('d-none');
+                emptyStateElement.textContent = '';
+
+                try {
+                    setLoginFormDisabled(true);
+                    setStatus('Probíhá server-side Citrix login…', 'info');
+
+                    const payload = await runServerSideLogin();
+
+                    if (!payload.ok) {
+                        throw new Error(payload.errorMessage || payload.message || 'Server-side Citrix login selhal.');
+                    }
+
+                    if (!payload.loginSucceeded) {
+                        setStatus('Přihlášení do Citrixu nebylo dokončeno.', 'warn');
+                        showEmptyState(payload.message || 'Citrix nevrátil success pro explicit login.');
+                        return;
+                    }
+
+                    const resources = extractResources(payload.resourcesPayload);
+                    if (!resources) {
+                        setStatus('Přihlášení proběhlo, ale seznam aplikací není validní.', 'warn');
+                        showEmptyState('Citrix login proběhl, ale Resources/List vrátil nečekaný formát.');
+                        return;
+                    }
+
+                    if (resources.length === 0) {
+                        setStatus('Přihlášení proběhlo, ale uživatel nemá žádné aplikace.', 'warn');
+                        showEmptyState('Citrix login proběhl, ale seznam aplikací je prázdný.');
+                        return;
+                    }
+
+                    renderApplications(resources);
+                    setStatus(`Načteno ${resources.length} aplikací přes server-side login.`, 'success');
+                    log.info('ExplicitLogin', `Aplikace byly načteny po explicit loginu. Počet: ${resources.length}`);
+                } catch (error) {
+                    const message = error instanceof Error ? error.message : String(error);
+                    setStatus('Server-side Citrix login selhal.', 'error');
+                    showEmptyState(message);
+                    log.error('ExplicitLogin', message);
+                } finally {
+                    setLoginFormDisabled(false);
+                }
+            };
+
             const run = async () => {
                 log.info('Init', 'JS init started');
                 log.info('Init', `RequestId: ${requestId}`);
@@ -525,6 +764,7 @@
                 log.info('Init', `BodyPreviewLimit: ${bodyPreviewLimit}`);
                 log.info('Init', `Client log endpoint: ${clientLogEndpoint || '(není nastaveno)'}`);
                 log.info('Init', `Server probe endpoint: ${serverProbeEndpoint || '(není nastaveno)'}`);
+                log.info('Init', `Server login endpoint: ${serverLoginEndpoint || '(není nastaveno)'}`);
                 log.info('Init', `Browser origin: ${window.location.origin}`);
                 log.info('Init', `Citrix URL origin: ${normalizedBaseUrl ? new URL(normalizedBaseUrl).origin : '(není nastaveno)'}`);
 
@@ -537,190 +777,14 @@
 
                 const httpsHeaderValue = normalizedBaseUrl.startsWith('https://') ? 'Yes' : 'No';
                 log.info('Init', `X-Citrix-IsUsingHTTPS bude odeslán s hodnotou "${httpsHeaderValue}".`);
-                log.info('Init', 'Browser fetch z localhostu neumí nasimulovat same-origin Citrix session. Když přímý fetch spadne na CORS nebo SameSite, server-side probe zkusí bootstrap přes GET store root.');
+                log.info('Init', 'PortalComponent teď čeká na ručně odeslaný explicit login formulář. Browser už nezkouší přímé cross-origin fetch requesty do Citrixu.');
 
-                setStatus('Načítám Citrix konfiguraci…', 'info');
-
-                const configurationUrl = joinUrl(normalizedBaseUrl, 'Home/Configuration');
-                const configurationHeaders = createCitrixHeaders({
-                    httpsHeaderValue
-                });
-                log.info('Home/Configuration', `Request headers: ${getSafeJsonPreview(configurationHeaders)}`);
-
-                const configurationResult = await runProbe('Home/Configuration', configurationUrl, {
-                    method: 'POST',
-                    body: '',
-                    credentials: 'include',
-                    headers: configurationHeaders
-                }).catch((error) => {
-                    setStatus('Nepodařilo se načíst konfiguraci.', 'error');
-                    log.error('Home/Configuration', `Fetch selhal. Pravděpodobně CORS / cookies / SameSite / certifikát / síť. Detail: ${error instanceof Error ? error.message : String(error)}`);
-                    void runServerSideProbe('Home/Configuration', configurationUrl, {
-                        method: 'POST',
-                        body: '',
-                        credentials: 'include',
-                        headers: configurationHeaders
-                    });
-                    showEmptyState('Konfigurace Citrixu se nepodařila načíst.');
-                    throw error;
-                });
-
-                const configurationText = configurationResult.responseText;
-
-                const csrfToken = getCookieValue('CsrfToken');
-                if (csrfToken) {
-                    log.info('CSRF', `CsrfToken nalezen v document.cookie: ${csrfToken}`);
-                } else {
-                    log.warn('CSRF', 'CsrfToken nebyl nalezen v document.cookie. To je očekávatelné při cross-origin scénáři z localhostu.');
+                if (loginFormElement) {
+                    loginFormElement.addEventListener('submit', handleLoginSubmit);
                 }
 
-                let parsedConfiguration;
-                try {
-                    parsedConfiguration = parseConfiguration(configurationText);
-                    log.info('ConfigurationParse', `Konfigurace úspěšně rozparsována: ${getSafeJsonPreview(parsedConfiguration)}`);
-                } catch (error) {
-                    setStatus('Nepodařilo se načíst konfiguraci.', 'error');
-                    log.error('ConfigurationParse', `Parsování XML konfigurace selhalo: ${error instanceof Error ? error.message : String(error)}`);
-                    showEmptyState('Konfiguraci StoreFrontu nešlo rozparsovat.');
-                    return;
-                }
-
-                const discoveredUrls = {
-                    getAuthMethods: parsedConfiguration.authentication?.locationURL
-                        ? joinUrl(normalizedBaseUrl, parsedConfiguration.authentication.locationURL)
-                        : '',
-                    getUserName: parsedConfiguration.authManager?.getUsernameURL
-                        ? joinUrl(normalizedBaseUrl, parsedConfiguration.authManager.getUsernameURL)
-                        : '',
-                    list: parsedConfiguration.resourcesProxy?.listURL
-                        ? joinUrl(normalizedBaseUrl, parsedConfiguration.resourcesProxy.listURL)
-                        : joinUrl(normalizedBaseUrl, 'Resources/List')
-                };
-
-                log.info('DiscoveredEndpoints', `Nalezené endpointy: ${getSafeJsonPreview(discoveredUrls)}`);
-
-                if (discoveredUrls.getAuthMethods) {
-                    const authMethodHeaders = createCitrixHeaders({
-                        httpsHeaderValue
-                    });
-
-                    await runProbe('Authentication/GetAuthMethods', discoveredUrls.getAuthMethods, {
-                        method: 'POST',
-                        body: '',
-                        credentials: 'include',
-                        headers: authMethodHeaders
-                    }).catch((error) => {
-                        log.warn('Authentication/GetAuthMethods', `Diagnostický probe selhal: ${error instanceof Error ? error.message : String(error)}`);
-                    });
-                } else {
-                    log.warn('Authentication/GetAuthMethods', 'URL pro auth methods nebyla v konfiguraci nalezena.');
-                }
-
-                if (discoveredUrls.getUserName) {
-                    const getUserNameHeaders = createCitrixHeaders({
-                        httpsHeaderValue,
-                        csrfToken
-                    });
-
-                    await runProbe('Authentication/GetUserName', discoveredUrls.getUserName, {
-                        method: 'POST',
-                        body: '',
-                        credentials: 'include',
-                        headers: getUserNameHeaders
-                    }).catch((error) => {
-                        log.warn('Authentication/GetUserName', `Diagnostický probe selhal: ${error instanceof Error ? error.message : String(error)}`);
-                    });
-                } else {
-                    log.warn('Authentication/GetUserName', 'URL pro GetUserName nebyla v konfiguraci nalezena.');
-                }
-
-                setStatus('Načítám seznam aplikací…', 'info');
-
-                const listUrl = discoveredUrls.list;
-                const listHeaders = createCitrixHeaders({
-                    httpsHeaderValue,
-                    csrfToken,
-                    includeContentType: true
-                });
-
-                log.info('Resources/List', `Request headers: ${getSafeJsonPreview(listHeaders)}`);
-
-                const listResult = await runProbe('Resources/List', listUrl, {
-                    method: 'POST',
-                    credentials: 'include',
-                    headers: listHeaders,
-                    body: new URLSearchParams({
-                        format: 'json',
-                        resourceDetails: 'Default'
-                    })
-                }).catch((error) => {
-                    setStatus('Nepodařilo se načíst seznam aplikací.', 'error');
-                    log.error('Resources/List', `Fetch selhal. Pravděpodobně CORS / cookies / SameSite / certifikát / síť. Detail: ${error instanceof Error ? error.message : String(error)}`);
-                    void runServerSideProbe('Resources/List', listUrl, {
-                        method: 'POST',
-                        credentials: 'include',
-                        headers: listHeaders,
-                        body: new URLSearchParams({
-                            format: 'json',
-                            resourceDetails: 'Default'
-                        })
-                    });
-                    showEmptyState('Seznam aplikací se nepodařilo načíst.');
-                    throw error;
-                });
-
-                const listResponse = listResult.response;
-                const listText = listResult.responseText;
-
-                if (looksLikeUnauthorized(listResponse, listText)) {
-                    setStatus('Uživatel není přihlášený do Citrixu.', 'warn');
-                    log.warn('Resources/List', 'Odpověď vypadá jako unauthorized / auth challenge / redirect na login.');
-                    showEmptyState('Uživatel není přihlášený do Citrixu nebo session nebyla z browseru použita.');
-                    return;
-                }
-
-                let parsedResourcesResponse;
-                try {
-                    parsedResourcesResponse = JSON.parse(listText);
-                } catch (error) {
-                    setStatus('Nepodařilo se načíst seznam aplikací.', 'error');
-                    log.error('Resources/ListParse', `Parsování JSON z Resources/List selhalo: ${error instanceof Error ? error.message : String(error)}`);
-                    showEmptyState('Odpověď Resources/List nebyla validní JSON.');
-                    return;
-                }
-
-                const resources = Array.isArray(parsedResourcesResponse)
-                    ? parsedResourcesResponse
-                    : Array.isArray(parsedResourcesResponse.resources)
-                        ? parsedResourcesResponse.resources
-                        : null;
-
-                if (!resources) {
-                    setStatus('Nepodařilo se načíst seznam aplikací.', 'error');
-                    log.error('Resources/ListParse', `Resources/List vrátil nečekaný tvar odpovědi: ${getSafeJsonPreview(parsedResourcesResponse)}`);
-                    showEmptyState('Odpověď Resources/List měla nečekaný formát.');
-                    return;
-                }
-
-                log.info('Resources/ListResult', `Počet načtených aplikací: ${resources.length}`);
-                log.info('Resources/ListResult', `První 1-2 položky: ${getSafeJsonPreview(resources.slice(0, 2))}`);
-
-                if (resources.length === 0) {
-                    setStatus('Žádné aplikace nebyly nalezeny.', 'warn');
-                    log.warn('Resources/ListResult', 'Resources/List proběhl, ale kolekce resources je prázdná.');
-                    showEmptyState('Žádné aplikace nebyly nalezeny.');
-                    return;
-                }
-
-                for (const resource of resources.slice(0, 2)) {
-                    if (resource.launchurl) {
-                        log.info('LaunchUrl', `Launch URL pro "${resource.name || '(bez názvu)'}": ${resource.launchurl}`);
-                    }
-                }
-
-                renderApplications(resources);
-                setStatus(`Načteno ${resources.length} aplikací.`, 'success');
-                log.info('Render', `Aplikace byly vyrenderovány do panelu. Počet: ${resources.length}`);
+                setStatus('Vyplňte přihlášení a spusťte server-side Citrix login.', 'info');
+                showEmptyState('Zatím nejsou načtené žádné aplikace. Přihlaste se přes formulář výše.');
             };
 
             run().catch((error) => {

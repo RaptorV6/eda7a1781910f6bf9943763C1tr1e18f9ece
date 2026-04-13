@@ -28,6 +28,10 @@ public sealed class CitrixProbeResponse
 
     public bool BootstrapCsrfTokenFound { get; init; }
 
+    public Dictionary<string, string> BootstrapHeaders { get; init; } = [];
+
+    public string BootstrapBodyPreview { get; init; } = string.Empty;
+
     public string BodyPreview { get; init; } = string.Empty;
 
     public string ErrorType { get; init; } = string.Empty;

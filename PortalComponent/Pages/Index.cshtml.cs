@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Mvc.RazorPages;
 using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using System.Diagnostics;
 
@@ -11,11 +12,13 @@ public class IndexModel : PageModel
     private const int DefaultBodyPreviewLimit = 1200;
 
     private readonly IConfiguration _configuration;
+    private readonly IHostEnvironment _hostEnvironment;
     private readonly ILogger<IndexModel> _logger;
 
-    public IndexModel(IConfiguration configuration, ILogger<IndexModel> logger)
+    public IndexModel(IConfiguration configuration, IHostEnvironment hostEnvironment, ILogger<IndexModel> logger)
     {
         _configuration = configuration;
+        _hostEnvironment = hostEnvironment;
         _logger = logger;
     }
 
@@ -41,9 +44,10 @@ public class IndexModel : PageModel
         var hasConfiguredUrl = !string.IsNullOrWhiteSpace(CitrixBaseUrl);
 
         _logger.LogInformation(
-            "Citrix PoC page opened. RequestId: {RequestId}. Path: {Path}. BaseUrl configured: {HasConfiguredUrl}. BaseUrl: {BaseUrl}. BodyPreviewLimit: {BodyPreviewLimit}",
+            "Citrix PoC page opened. RequestId: {RequestId}. Path: {Path}. Environment: {Environment}. BaseUrl configured: {HasConfiguredUrl}. BaseUrl: {BaseUrl}. BodyPreviewLimit: {BodyPreviewLimit}",
             DiagnosticRequestId,
             HttpContext?.Request?.Path.Value,
+            _hostEnvironment.EnvironmentName,
             hasConfiguredUrl,
             CitrixBaseUrl,
             BodyPreviewLimit);

@@ -16,6 +16,8 @@ public sealed class CitrixLoginResponse
 
     public int? BootstrapStatusCode { get; init; }
 
+    public int? BootstrapLandingStatusCode { get; init; }
+
     public int? LoginFormStatusCode { get; init; }
 
     public int? LoginSubmitStatusCode { get; init; }
@@ -23,6 +25,10 @@ public sealed class CitrixLoginResponse
     public int? ResourcesStatusCode { get; init; }
 
     public int? AuthMethodsStatusCode { get; init; }
+
+    public string BootstrapFinalUrl { get; init; } = string.Empty;
+
+    public string BootstrapRedirectUrl { get; init; } = string.Empty;
 
     public string LoginFormUrl { get; init; } = string.Empty;
 
@@ -35,6 +41,12 @@ public sealed class CitrixLoginResponse
     public string[] CookieNames { get; init; } = [];
 
     public bool CsrfTokenFound { get; init; }
+
+    public Dictionary<string, string> BootstrapHeaders { get; init; } = [];
+
+    public string BootstrapBodyPreview { get; init; } = string.Empty;
+
+    public string BootstrapLandingPreview { get; init; } = string.Empty;
 
     public string LoginFormPreview { get; init; } = string.Empty;
 

@@ -335,6 +335,14 @@
                 }
             };
 
+            const logMultilineBlock = (stepName, label, value) => {
+                if (!value) {
+                    return;
+                }
+
+                log.info(stepName, `${label}:\n${truncate(value)}`);
+            };
+
             const getAccessibleHeaders = (response) => {
                 const headers = {};
 
@@ -706,6 +714,36 @@
                 return payload;
             };
 
+            const explainExplicitLogin = (payload) => {
+                if (!payload) {
+                    return;
+                }
+
+                if (payload.bootstrapRedirectUrl) {
+                    log.info('ExplicitLogin', `Bootstrap redirect URL: ${payload.bootstrapRedirectUrl}`);
+                }
+
+                if (payload.bootstrapFinalUrl) {
+                    log.info('ExplicitLogin', `Bootstrap final URL: ${payload.bootstrapFinalUrl}`);
+                }
+
+                if (Array.isArray(payload.authMethodCandidates) && payload.authMethodCandidates.length > 0) {
+                    log.info('ExplicitLogin', `Auth method kandidáti: ${payload.authMethodCandidates.join(' | ')}`);
+                } else {
+                    log.warn('ExplicitLogin', 'GetAuthMethods nevrátil žádný rozpoznaný auth endpoint.');
+                }
+
+                if (Array.isArray(payload.loginAttemptResults) && payload.loginAttemptResults.length > 0) {
+                    payload.loginAttemptResults.forEach((attempt, index) => {
+                        log.info('ExplicitLogin', `Login attempt ${index + 1}: ${attempt}`);
+                    });
+                }
+
+                logMultilineBlock('ExplicitLogin', 'AuthMethods preview', payload.authMethodsPreview);
+                logMultilineBlock('ExplicitLogin', 'Bootstrap landing preview', payload.bootstrapLandingPreview);
+                logMultilineBlock('ExplicitLogin', 'Login form preview', payload.loginFormPreview);
+            };
+
             const handleLoginSubmit = async (event) => {
                 event.preventDefault();
 
@@ -718,6 +756,7 @@
                     setStatus('Probíhá server-side Citrix login…', 'info');
 
                     const payload = await runServerSideLogin();
+                    explainExplicitLogin(payload);
 
                     if (!payload.ok) {
                         throw new Error(payload.errorMessage || payload.message || 'Server-side Citrix login selhal.');

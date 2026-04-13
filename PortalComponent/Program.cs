@@ -339,6 +339,8 @@ app.MapPost("/api/citrix-diagnostics/explicit-login", async (
     string authResult = string.Empty;
     string loginPostUrl = string.Empty;
     Uri? resolvedLoginFormUri = null;
+    var authMethodCandidates = new List<string>();
+    var loginAttemptResults = new List<string>();
 
     logger.LogInformation(
         "Citrix explicit login started. RequestId: {RequestId}. StoreRootUrl: {StoreRootUrl}. Username: {Username}. Domain: {Domain}",
@@ -426,6 +428,7 @@ app.MapPost("/api/citrix-diagnostics/explicit-login", async (
 
                 foreach (var candidate in CitrixExplicitAuth.TryParseAuthMethodUris(authMethodsBody, storeRootUri))
                 {
+                    authMethodCandidates.Add(candidate.ToString());
                     if (!loginUriCandidates.Contains(candidate))
                     {
                         loginUriCandidates.Add(candidate);
@@ -479,6 +482,7 @@ app.MapPost("/api/citrix-diagnostics/explicit-login", async (
                     var loginFormResponseBody = await loginFormResponse.Content.ReadAsStringAsync(cancellationToken);
                     loginFormPreview = CitrixExplicitAuth.Preview(loginFormResponseBody);
                     authForm = CitrixExplicitAuth.TryParseAuthForm(loginFormResponseBody);
+                    loginAttemptResults.Add($"{candidateMethod} {candidateUri} => {(int)loginFormResponse.StatusCode} parse={(authForm is not null ? "ok" : "none")}");
 
                     if (authForm is not null)
                     {
@@ -486,9 +490,9 @@ app.MapPost("/api/citrix-diagnostics/explicit-login", async (
                         break;
                     }
                 }
-                catch
+                catch (Exception exception)
                 {
-                    // Try next candidate.
+                    loginAttemptResults.Add($"{candidateMethod} {candidateUri} => EXCEPTION {exception.GetType().Name}: {exception.Message}");
                 }
             }
 
@@ -511,7 +515,9 @@ app.MapPost("/api/citrix-diagnostics/explicit-login", async (
                 BootstrapFinalUrl = bootstrapFinalUrl,
                 BootstrapRedirectUrl = bootstrapRedirectUrl,
                 AuthMethodsUrl = authMethodsUri.ToString(),
+                AuthMethodCandidates = authMethodCandidates.Distinct(StringComparer.OrdinalIgnoreCase).ToArray(),
                 LoginFormUrl = loginUriCandidates.FirstOrDefault()?.ToString() ?? explicitLoginUri.ToString(),
+                LoginAttemptResults = loginAttemptResults.ToArray(),
                 CookieNames = CitrixExplicitAuth.GetCookieNames(handler.CookieContainer, storeRootUri),
                 CsrfTokenFound = !string.IsNullOrWhiteSpace(CitrixExplicitAuth.GetCookieValue(handler.CookieContainer, storeRootUri, "CsrfToken")),
                 BootstrapHeaders = bootstrapHeaders,
@@ -540,7 +546,9 @@ app.MapPost("/api/citrix-diagnostics/explicit-login", async (
                 BootstrapFinalUrl = bootstrapFinalUrl,
                 BootstrapRedirectUrl = bootstrapRedirectUrl,
                 AuthMethodsUrl = authMethodsUri.ToString(),
+                AuthMethodCandidates = authMethodCandidates.Distinct(StringComparer.OrdinalIgnoreCase).ToArray(),
                 LoginFormUrl = resolvedLoginFormUri?.ToString() ?? loginUriCandidates.FirstOrDefault()?.ToString() ?? explicitLoginUri.ToString(),
+                LoginAttemptResults = loginAttemptResults.ToArray(),
                 BootstrapHeaders = bootstrapHeaders,
                 BootstrapBodyPreview = bootstrapBodyPreview,
                 BootstrapLandingPreview = bootstrapLandingPreview,
@@ -611,8 +619,10 @@ app.MapPost("/api/citrix-diagnostics/explicit-login", async (
                 BootstrapFinalUrl = bootstrapFinalUrl,
                 BootstrapRedirectUrl = bootstrapRedirectUrl,
                 AuthMethodsUrl = authMethodsUri.ToString(),
+                AuthMethodCandidates = authMethodCandidates.Distinct(StringComparer.OrdinalIgnoreCase).ToArray(),
                 LoginFormUrl = (resolvedLoginFormUri ?? explicitLoginUri).ToString(),
                 LoginPostUrl = loginPostUrl,
+                LoginAttemptResults = loginAttemptResults.ToArray(),
                 CookieNames = cookieNames,
                 CsrfTokenFound = csrfTokenFound,
                 BootstrapHeaders = bootstrapHeaders,
@@ -655,9 +665,11 @@ app.MapPost("/api/citrix-diagnostics/explicit-login", async (
                 BootstrapFinalUrl = bootstrapFinalUrl,
                 BootstrapRedirectUrl = bootstrapRedirectUrl,
                 AuthMethodsUrl = authMethodsUri.ToString(),
+                AuthMethodCandidates = authMethodCandidates.Distinct(StringComparer.OrdinalIgnoreCase).ToArray(),
                 LoginFormUrl = (resolvedLoginFormUri ?? explicitLoginUri).ToString(),
                 LoginPostUrl = loginPostUrl,
                 ResourcesUrl = resourcesUri.ToString(),
+                LoginAttemptResults = loginAttemptResults.ToArray(),
                 CookieNames = CitrixExplicitAuth.GetCookieNames(handler.CookieContainer, storeRootUri),
                 CsrfTokenFound = !string.IsNullOrWhiteSpace(CitrixExplicitAuth.GetCookieValue(handler.CookieContainer, storeRootUri, "CsrfToken")),
                 BootstrapHeaders = bootstrapHeaders,
@@ -695,9 +707,11 @@ app.MapPost("/api/citrix-diagnostics/explicit-login", async (
             BootstrapFinalUrl = bootstrapFinalUrl,
             BootstrapRedirectUrl = bootstrapRedirectUrl,
             AuthMethodsUrl = authMethodsUri.ToString(),
+            AuthMethodCandidates = authMethodCandidates.Distinct(StringComparer.OrdinalIgnoreCase).ToArray(),
             LoginFormUrl = resolvedLoginFormUri?.ToString() ?? explicitLoginUri.ToString(),
             LoginPostUrl = loginPostUrl,
             ResourcesUrl = resourcesUri.ToString(),
+            LoginAttemptResults = loginAttemptResults.ToArray(),
             BootstrapHeaders = bootstrapHeaders,
             BootstrapBodyPreview = bootstrapBodyPreview,
             BootstrapLandingPreview = bootstrapLandingPreview,

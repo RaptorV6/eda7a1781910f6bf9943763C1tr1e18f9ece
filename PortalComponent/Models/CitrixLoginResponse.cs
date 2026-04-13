@@ -38,6 +38,10 @@ public sealed class CitrixLoginResponse
 
     public string AuthMethodsUrl { get; init; } = string.Empty;
 
+    public string[] AuthMethodCandidates { get; init; } = [];
+
+    public string[] LoginAttemptResults { get; init; } = [];
+
     public string[] CookieNames { get; init; } = [];
 
     public bool CsrfTokenFound { get; init; }

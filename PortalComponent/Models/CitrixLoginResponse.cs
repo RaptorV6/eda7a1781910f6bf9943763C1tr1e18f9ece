@@ -14,6 +14,8 @@ public sealed class CitrixLoginResponse
 
     public string AuthResult { get; init; } = string.Empty;
 
+    public string LoginErrorText { get; init; } = string.Empty;
+
     public int? BootstrapStatusCode { get; init; }
 
     public int? BootstrapLandingStatusCode { get; init; }

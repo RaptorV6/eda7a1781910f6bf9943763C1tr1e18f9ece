@@ -338,6 +338,7 @@ app.MapPost("/api/citrix-diagnostics/explicit-login", async (
     string loginSubmitPreview = string.Empty;
     string resourcesPreview = string.Empty;
     string authResult = string.Empty;
+    string loginErrorText = string.Empty;
     string loginFormUrl = string.Empty;
     string loginPostUrl = string.Empty;
     var authMethodCandidates = new List<string>();
@@ -426,6 +427,11 @@ app.MapPost("/api/citrix-diagnostics/explicit-login", async (
                 {
                     authMethodCandidates.Add(candidate.ToString());
                 }
+
+                if (authMethodsResponse.IsSuccessStatusCode)
+                {
+                    break;
+                }
             }
             catch
             {
@@ -491,8 +497,9 @@ app.MapPost("/api/citrix-diagnostics/explicit-login", async (
             loginSubmitStatusCode = loginSubmitResponse.StatusCode;
             var loginSubmitBody = await loginSubmitResponse.Content.ReadAsStringAsync(cancellationToken);
             loginSubmitPreview = CitrixExplicitAuth.Preview(loginSubmitBody);
-            loginAttemptResults.Add($"POST {loginAttemptUri} => {(int)loginSubmitResponse.StatusCode}");
+            loginErrorText = CitrixExplicitAuth.FindAuthMessage(loginSubmitBody);
             authResult = CitrixExplicitAuth.FindElementValue(loginSubmitBody, "Result");
+            loginAttemptResults.Add($"POST {loginAttemptUri} => {(int)loginSubmitResponse.StatusCode} result={authResult ?? string.Empty}".TrimEnd());
         }
 
         var cookieNames = CitrixExplicitAuth.GetCookieNames(handler.CookieContainer, storeRootUri);
@@ -506,8 +513,11 @@ app.MapPost("/api/citrix-diagnostics/explicit-login", async (
                 Ok = true,
                 RequestId = loginRequest.RequestId,
                 LoginSucceeded = false,
-                Message = "Citrix login nevrátil success. Zkontrolujte credentials nebo další auth krok.",
-                AuthResult = authResult,
+                Message = string.IsNullOrWhiteSpace(loginErrorText)
+                    ? "Citrix login nevrátil success. Zkontrolujte credentials nebo další auth krok."
+                    : $"Citrix login nevrátil success: {loginErrorText}",
+                AuthResult = authResult ?? string.Empty,
+                LoginErrorText = loginErrorText ?? string.Empty,
                 BootstrapStatusCode = bootstrapStatusCode is null ? null : (int)bootstrapStatusCode.Value,
                 BootstrapLandingStatusCode = bootstrapLandingStatusCode is null ? null : (int)bootstrapLandingStatusCode.Value,
                 AuthMethodsStatusCode = authMethodsStatusCode is null ? null : (int)authMethodsStatusCode.Value,
@@ -552,7 +562,8 @@ app.MapPost("/api/citrix-diagnostics/explicit-login", async (
                 RequestId = loginRequest.RequestId,
                 LoginSucceeded = true,
                 Message = "Citrix explicit login proběhl a server vrátil Resources/List.",
-                AuthResult = authResult,
+                AuthResult = authResult ?? string.Empty,
+                LoginErrorText = loginErrorText ?? string.Empty,
                 BootstrapStatusCode = bootstrapStatusCode is null ? null : (int)bootstrapStatusCode.Value,
                 BootstrapLandingStatusCode = bootstrapLandingStatusCode is null ? null : (int)bootstrapLandingStatusCode.Value,
                 AuthMethodsStatusCode = authMethodsStatusCode is null ? null : (int)authMethodsStatusCode.Value,
@@ -595,6 +606,7 @@ app.MapPost("/api/citrix-diagnostics/explicit-login", async (
             Ok = false,
             RequestId = loginRequest.RequestId,
             AuthResult = authResult,
+            LoginErrorText = loginErrorText,
             BootstrapStatusCode = bootstrapStatusCode is null ? null : (int)bootstrapStatusCode.Value,
             BootstrapLandingStatusCode = bootstrapLandingStatusCode is null ? null : (int)bootstrapLandingStatusCode.Value,
             AuthMethodsStatusCode = authMethodsStatusCode is null ? null : (int)authMethodsStatusCode.Value,
@@ -863,6 +875,42 @@ internal static class CitrixExplicitAuth
         {
             var document = XDocument.Parse(xmlText);
             return document.Descendants().FirstOrDefault(element => element.Name.LocalName == localName)?.Value ?? string.Empty;
+        }
+        catch
+        {
+            return string.Empty;
+        }
+    }
+
+    public static string FindAuthMessage(string xmlText)
+    {
+        try
+        {
+            var document = XDocument.Parse(xmlText);
+
+            var errorLabel = document
+                .Descendants()
+                .Where(element => element.Name.LocalName == "Label")
+                .Select(label => new
+                {
+                    Type = label.Elements().FirstOrDefault(child => child.Name.LocalName == "Type")?.Value ?? string.Empty,
+                    Text = label.Elements().FirstOrDefault(child => child.Name.LocalName == "Text")?.Value ?? string.Empty
+                })
+                .FirstOrDefault(label =>
+                    string.Equals(label.Type, "error", StringComparison.OrdinalIgnoreCase)
+                    && !string.IsNullOrWhiteSpace(label.Text));
+
+            if (!string.IsNullOrWhiteSpace(errorLabel?.Text))
+            {
+                return errorLabel.Text;
+            }
+
+            return document.Descendants()
+                .FirstOrDefault(element =>
+                    string.Equals(element.Name.LocalName, "Message", StringComparison.OrdinalIgnoreCase)
+                    || string.Equals(element.Name.LocalName, "Text", StringComparison.OrdinalIgnoreCase))
+                ?.Value
+                ?? string.Empty;
         }
         catch
         {

@@ -739,9 +739,18 @@
                     });
                 }
 
+                if (payload.authResult) {
+                    log.info('ExplicitLogin', `Auth result: ${payload.authResult}`);
+                }
+
+                if (payload.loginErrorText) {
+                    log.warn('ExplicitLogin', `Citrix error text: ${payload.loginErrorText}`);
+                }
+
                 logMultilineBlock('ExplicitLogin', 'AuthMethods preview', payload.authMethodsPreview);
                 logMultilineBlock('ExplicitLogin', 'Bootstrap landing preview', payload.bootstrapLandingPreview);
                 logMultilineBlock('ExplicitLogin', 'Login form preview', payload.loginFormPreview);
+                logMultilineBlock('ExplicitLogin', 'Login submit preview', payload.loginSubmitPreview);
             };
 
             const handleLoginSubmit = async (event) => {

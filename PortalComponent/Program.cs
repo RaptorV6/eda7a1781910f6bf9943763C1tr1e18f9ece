@@ -359,7 +359,7 @@ app.MapPost("/api/citrix-diagnostics/explicit-login", async (
         using (var bootstrapRequest = CitrixExplicitAuth.CreateRequest(
             HttpMethod.Get,
             storeRootUri,
-            CitrixExplicitAuth.CreateBaseHeaders(storeRootUri, storeRootUri, httpsHeaderValue, acceptLanguage: forwardedAcceptLanguage, userAgent: forwardedUserAgent)))
+            CitrixExplicitAuth.CreatePageHeaders(storeRootUri, forwardedAcceptLanguage, forwardedUserAgent)))
         using (var bootstrapResponse = await client.SendAsync(bootstrapRequest, cancellationToken))
         {
             bootstrapStatusCode = bootstrapResponse.StatusCode;
@@ -387,7 +387,7 @@ app.MapPost("/api/citrix-diagnostics/explicit-login", async (
                     using var landingRequest = CitrixExplicitAuth.CreateRequest(
                         HttpMethod.Get,
                         nextBootstrapUri,
-                        CitrixExplicitAuth.CreateBaseHeaders(storeRootUri, nextBootstrapUri, httpsHeaderValue, acceptLanguage: forwardedAcceptLanguage, userAgent: forwardedUserAgent));
+                        CitrixExplicitAuth.CreatePageHeaders(storeRootUri, forwardedAcceptLanguage, forwardedUserAgent));
                     using var landingResponse = await client.SendAsync(landingRequest, cancellationToken);
                     var landingBody = await landingResponse.Content.ReadAsStringAsync(cancellationToken);
 
@@ -424,8 +424,7 @@ app.MapPost("/api/citrix-diagnostics/explicit-login", async (
             {
                 using var metaRequest = CitrixExplicitAuth.CreateRequest(
                     HttpMethod.Get, metaCurrentUri,
-                    CitrixExplicitAuth.CreateBaseHeaders(storeRootUri, metaCurrentUri, httpsHeaderValue,
-                        acceptLanguage: forwardedAcceptLanguage, userAgent: forwardedUserAgent));
+                    CitrixExplicitAuth.CreatePageHeaders(storeRootUri, forwardedAcceptLanguage, forwardedUserAgent));
                 using var metaResponse = await client.SendAsync(metaRequest, cancellationToken);
                 var metaBody = await metaResponse.Content.ReadAsStringAsync(cancellationToken);
 
@@ -595,6 +594,11 @@ app.MapPost("/api/citrix-diagnostics/explicit-login", async (
             loginRequest.RequestId, loginAttemptUri, usernameField, domainField, !string.IsNullOrWhiteSpace(stateContextValue));
 
         var loginFormBody = await new FormUrlEncodedContent(loginFormPayload).ReadAsStringAsync(cancellationToken);
+
+        // Diagnostic: show which cookies are present before LoginAttempt
+        var originRootUri = new Uri($"{storeRootUri.Scheme}://{storeRootUri.Authority}/");
+        loginAttemptResults.Add($"[pre-login cookies:storeRoot] {string.Join(", ", CitrixExplicitAuth.GetCookieNames(handler.CookieContainer, storeRootUri))}");
+        loginAttemptResults.Add($"[pre-login cookies:originRoot] {string.Join(", ", CitrixExplicitAuth.GetCookieNames(handler.CookieContainer, originRootUri))}");
 
         using (var loginSubmitRequest = CitrixExplicitAuth.CreateRequest(
             HttpMethod.Post,
@@ -783,6 +787,32 @@ internal static class CitrixExplicitAuth
 {
     public const string FormCredentialTypes = "none, username, domain, password, newpassword, passcode, savecredentials, textcredential, webview, webview";
     public const string FormLabelTypes = "none, plain, heading, information, warning, error, confirmation, image";
+
+    // Use for page navigation (bootstrap, redirect hops, meta-refresh) — NOT for StoreFront API calls.
+    // Omits X-Requested-With and X-Citrix-IsUsingHTTPS so StoreFront treats the request as a real browser
+    // page load and creates an ASP.NET session (ASP.NET_SessionId) in its response.
+    public static Dictionary<string, string> CreatePageHeaders(
+        Uri storeRootUri,
+        string? acceptLanguage = null,
+        string? userAgent = null)
+    {
+        var headers = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["Accept"] = "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
+            ["Origin"] = $"{storeRootUri.Scheme}://{storeRootUri.Authority}",
+            ["Referer"] = storeRootUri.ToString(),
+            ["Cache-Control"] = "no-cache",
+            ["Pragma"] = "no-cache",
+            ["Upgrade-Insecure-Requests"] = "1"
+        };
+
+        if (!string.IsNullOrWhiteSpace(acceptLanguage))
+            headers["Accept-Language"] = acceptLanguage;
+        if (!string.IsNullOrWhiteSpace(userAgent))
+            headers["User-Agent"] = userAgent;
+
+        return headers;
+    }
 
     public static Dictionary<string, string> CreateBaseHeaders(
         Uri storeRootUri,

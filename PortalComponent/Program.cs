@@ -418,23 +418,38 @@ app.MapPost("/api/citrix-diagnostics/explicit-login", async (
                 "Citrix bootstrap: following HTML meta-refresh. RequestId: {RequestId}. MetaRefreshUrl: {MetaRefreshUrl}",
                 loginRequest.RequestId, metaRefreshTargetUri);
 
-            using var metaRequest = CitrixExplicitAuth.CreateRequest(
-                HttpMethod.Get, metaRefreshTargetUri,
-                CitrixExplicitAuth.CreateBaseHeaders(storeRootUri, metaRefreshTargetUri, httpsHeaderValue,
-                    acceptLanguage: forwardedAcceptLanguage, userAgent: forwardedUserAgent));
-            using var metaResponse = await client.SendAsync(metaRequest, cancellationToken);
-            var metaBody = await metaResponse.Content.ReadAsStringAsync(cancellationToken);
+            // Follow HTTP redirects after meta-refresh (e.g. /Citrix/FISWeb → 301 → /Citrix/FISWeb/)
+            var metaCurrentUri = metaRefreshTargetUri;
+            for (var metaHop = 0; metaHop < 5; metaHop++)
+            {
+                using var metaRequest = CitrixExplicitAuth.CreateRequest(
+                    HttpMethod.Get, metaCurrentUri,
+                    CitrixExplicitAuth.CreateBaseHeaders(storeRootUri, metaCurrentUri, httpsHeaderValue,
+                        acceptLanguage: forwardedAcceptLanguage, userAgent: forwardedUserAgent));
+                using var metaResponse = await client.SendAsync(metaRequest, cancellationToken);
+                var metaBody = await metaResponse.Content.ReadAsStringAsync(cancellationToken);
 
-            bootstrapLandingStatusCode = metaResponse.StatusCode;
-            bootstrapFinalUrl = metaResponse.RequestMessage?.RequestUri?.ToString() ?? metaRefreshTargetUri.ToString();
-            bootstrapLandingPreview = CitrixExplicitAuth.Preview(metaBody);
+                bootstrapLandingStatusCode = metaResponse.StatusCode;
+                bootstrapFinalUrl = metaResponse.RequestMessage?.RequestUri?.ToString() ?? metaCurrentUri.ToString();
+                bootstrapLandingPreview = CitrixExplicitAuth.Preview(metaBody);
 
-            logger.LogInformation(
-                "Citrix bootstrap: meta-refresh completed. RequestId: {RequestId}. StatusCode: {StatusCode}. FinalUrl: {FinalUrl}. Cookies: {Cookies}",
-                loginRequest.RequestId,
-                (int)metaResponse.StatusCode,
-                bootstrapFinalUrl,
-                string.Join(", ", CitrixExplicitAuth.GetCookieNames(handler.CookieContainer, storeRootUri)));
+                logger.LogInformation(
+                    "Citrix bootstrap: meta-refresh hop {Hop}. RequestId: {RequestId}. StatusCode: {StatusCode}. Url: {Url}. Cookies: {Cookies}",
+                    metaHop + 1,
+                    loginRequest.RequestId,
+                    (int)metaResponse.StatusCode,
+                    bootstrapFinalUrl,
+                    string.Join(", ", CitrixExplicitAuth.GetCookieNames(handler.CookieContainer, storeRootUri)));
+
+                if ((int)metaResponse.StatusCode is < 300 or >= 400 || metaResponse.Headers.Location is null)
+                {
+                    break;
+                }
+
+                metaCurrentUri = metaResponse.Headers.Location.IsAbsoluteUri
+                    ? metaResponse.Headers.Location
+                    : new Uri(metaCurrentUri, metaResponse.Headers.Location);
+            }
         }
 
         var authMethodsHeaders = CitrixExplicitAuth.CreateBaseHeaders(storeRootUri, authMethodsUri, httpsHeaderValue, acceptLanguage: forwardedAcceptLanguage, userAgent: forwardedUserAgent);
@@ -564,9 +579,15 @@ app.MapPost("/api/citrix-diagnostics/explicit-login", async (
             ["StateContext"] = stateContextValue
         };
 
+        // HAR: browser sends loginBtn=Přihlásit with empty StateContext and succeeds.
+        // Use parsed button if available; fall back to known StoreFront default.
         if (parsedLoginForm?.SubmitButtonId is { Length: > 0 } btnId && parsedLoginForm.SubmitButtonValue is { Length: > 0 } btnVal)
         {
             loginFormPayload[btnId] = btnVal;
+        }
+        else if (!loginFormPayload.ContainsKey("loginBtn"))
+        {
+            loginFormPayload["loginBtn"] = "Přihlásit";
         }
 
         logger.LogInformation(

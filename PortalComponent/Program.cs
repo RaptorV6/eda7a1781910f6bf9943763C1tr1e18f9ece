@@ -407,6 +407,36 @@ app.MapPost("/api/citrix-diagnostics/explicit-login", async (
             }
         }
 
+        // Follow HTML meta-refresh if present (e.g. /cgi/setclient?wica → /Citrix/FISWeb)
+        // NetScaler returns 200 with <META HTTP-EQUIV="REFRESH"> instead of a 3xx HTTP redirect.
+        var bootstrapMetaRefreshTarget = CitrixExplicitAuth.TryExtractMetaRefreshUrl(bootstrapLandingPreview);
+        if (!string.IsNullOrWhiteSpace(bootstrapMetaRefreshTarget)
+            && Uri.TryCreate(bootstrapFinalUrl.Length > 0 ? bootstrapFinalUrl : storeRootUri.ToString(), UriKind.Absolute, out var bootstrapFinalBase)
+            && Uri.TryCreate(bootstrapFinalBase, bootstrapMetaRefreshTarget, out var metaRefreshTargetUri))
+        {
+            logger.LogInformation(
+                "Citrix bootstrap: following HTML meta-refresh. RequestId: {RequestId}. MetaRefreshUrl: {MetaRefreshUrl}",
+                loginRequest.RequestId, metaRefreshTargetUri);
+
+            using var metaRequest = CitrixExplicitAuth.CreateRequest(
+                HttpMethod.Get, metaRefreshTargetUri,
+                CitrixExplicitAuth.CreateBaseHeaders(storeRootUri, metaRefreshTargetUri, httpsHeaderValue,
+                    acceptLanguage: forwardedAcceptLanguage, userAgent: forwardedUserAgent));
+            using var metaResponse = await client.SendAsync(metaRequest, cancellationToken);
+            var metaBody = await metaResponse.Content.ReadAsStringAsync(cancellationToken);
+
+            bootstrapLandingStatusCode = metaResponse.StatusCode;
+            bootstrapFinalUrl = metaResponse.RequestMessage?.RequestUri?.ToString() ?? metaRefreshTargetUri.ToString();
+            bootstrapLandingPreview = CitrixExplicitAuth.Preview(metaBody);
+
+            logger.LogInformation(
+                "Citrix bootstrap: meta-refresh completed. RequestId: {RequestId}. StatusCode: {StatusCode}. FinalUrl: {FinalUrl}. Cookies: {Cookies}",
+                loginRequest.RequestId,
+                (int)metaResponse.StatusCode,
+                bootstrapFinalUrl,
+                string.Join(", ", CitrixExplicitAuth.GetCookieNames(handler.CookieContainer, storeRootUri)));
+        }
+
         var authMethodsHeaders = CitrixExplicitAuth.CreateBaseHeaders(storeRootUri, authMethodsUri, httpsHeaderValue, acceptLanguage: forwardedAcceptLanguage, userAgent: forwardedUserAgent);
         authMethodsHeaders["X-Citrix-AM-CredentialTypes"] = CitrixExplicitAuth.FormCredentialTypes;
         authMethodsHeaders["X-Citrix-AM-LabelTypes"] = CitrixExplicitAuth.FormLabelTypes;
@@ -471,7 +501,55 @@ app.MapPost("/api/citrix-diagnostics/explicit-login", async (
 
         loginFormUrl = explicitLoginUri.ToString();
         loginPostUrl = loginAttemptUri.ToString();
-        loginFormPreview = "Direct LoginAttempt flow selected from captured browser HAR; no separate login-form fetch was performed.";
+
+        // Step 1: GET ExplicitAuth/Login to obtain StateContext.
+        // Citrix StoreFront requires a valid StateContext in LoginAttempt – without it the server
+        // responds with <Result>fail</Result><LogMessage>sessiontimeout</LogMessage>.
+        CitrixAuthFormDefinition? parsedLoginForm = null;
+        var loginFormGetHeaders = CitrixExplicitAuth.CreateBaseHeaders(storeRootUri, explicitLoginUri, httpsHeaderValue, currentCsrfToken, forwardedAcceptLanguage, forwardedUserAgent);
+        loginFormGetHeaders["X-Citrix-AM-CredentialTypes"] = CitrixExplicitAuth.FormCredentialTypes;
+        loginFormGetHeaders["X-Citrix-AM-LabelTypes"] = CitrixExplicitAuth.FormLabelTypes;
+
+        using (var loginFormGetRequest = CitrixExplicitAuth.CreateRequest(HttpMethod.Get, explicitLoginUri, loginFormGetHeaders))
+        using (var loginFormGetResponse = await client.SendAsync(loginFormGetRequest, cancellationToken))
+        {
+            loginFormStatusCode = loginFormGetResponse.StatusCode;
+            var loginFormBodyRaw = await loginFormGetResponse.Content.ReadAsStringAsync(cancellationToken);
+            loginFormPreview = CitrixExplicitAuth.Preview(loginFormBodyRaw);
+            loginFormUrl = loginFormGetResponse.RequestMessage?.RequestUri?.ToString() ?? explicitLoginUri.ToString();
+            parsedLoginForm = CitrixExplicitAuth.TryParseAuthForm(loginFormBodyRaw);
+
+            // Refresh CsrfToken – the login form GET may update it
+            var refreshedCsrfToken = CitrixExplicitAuth.GetCookieValue(handler.CookieContainer, storeRootUri, "CsrfToken");
+            if (!string.IsNullOrWhiteSpace(refreshedCsrfToken))
+            {
+                currentCsrfToken = refreshedCsrfToken;
+            }
+
+            logger.LogInformation(
+                "Citrix login form fetched. RequestId: {RequestId}. StatusCode: {StatusCode}. HasCredentialInputs: {HasCredentialInputs}. StateContextPresent: {StateContextPresent}. PostBack: {PostBack}. Cookies: {Cookies}",
+                loginRequest.RequestId,
+                (int)loginFormGetResponse.StatusCode,
+                parsedLoginForm?.HasCredentialInputs,
+                !string.IsNullOrWhiteSpace(parsedLoginForm?.StateContext),
+                parsedLoginForm?.PostBack ?? "(none)",
+                string.Join(", ", CitrixExplicitAuth.GetCookieNames(handler.CookieContainer, storeRootUri)));
+        }
+
+        // Use PostBack URL from form definition if available
+        if (parsedLoginForm?.PostBack is { Length: > 0 } postBackRelPath
+            && Uri.TryCreate(storeRootUri, postBackRelPath, out var parsedPostBackUri))
+        {
+            loginAttemptUri = parsedPostBackUri;
+            loginPostUrl = loginAttemptUri.ToString();
+        }
+
+        // Step 2: POST LoginAttempt with StateContext from form definition
+        // Use field IDs from parsed form; fall back to well-known StoreFront defaults
+        var usernameField = parsedLoginForm?.UsernameId is { Length: > 0 } uid ? uid : "username";
+        var passwordField = parsedLoginForm?.PasswordId is { Length: > 0 } pid ? pid : "password";
+        var domainField = parsedLoginForm?.DomainId is { Length: > 0 } did ? did : "domain";
+        var stateContextValue = parsedLoginForm?.StateContext ?? string.Empty;
 
         var loginSubmitHeaders = CitrixExplicitAuth.CreateBaseHeaders(storeRootUri, loginAttemptUri, httpsHeaderValue, currentCsrfToken, forwardedAcceptLanguage, forwardedUserAgent);
         loginSubmitHeaders["X-Citrix-AM-CredentialTypes"] = CitrixExplicitAuth.FormCredentialTypes;
@@ -479,13 +557,21 @@ app.MapPost("/api/citrix-diagnostics/explicit-login", async (
 
         var loginFormPayload = new Dictionary<string, string>(StringComparer.Ordinal)
         {
-            ["username"] = loginRequest.Username.Trim(),
-            ["password"] = loginRequest.Password,
+            [usernameField] = loginRequest.Username.Trim(),
+            [passwordField] = loginRequest.Password,
             ["saveCredentials"] = "false",
-            ["domain"] = loginRequest.Domain.Trim(),
-            ["loginBtn"] = "Přihlásit",
-            ["StateContext"] = string.Empty
+            [domainField] = loginRequest.Domain.Trim(),
+            ["StateContext"] = stateContextValue
         };
+
+        if (parsedLoginForm?.SubmitButtonId is { Length: > 0 } btnId && parsedLoginForm.SubmitButtonValue is { Length: > 0 } btnVal)
+        {
+            loginFormPayload[btnId] = btnVal;
+        }
+
+        logger.LogInformation(
+            "Citrix login attempt. RequestId: {RequestId}. LoginAttemptUri: {LoginAttemptUri}. UsernameField: {UsernameField}. DomainField: {DomainField}. StateContextPresent: {StateContextPresent}",
+            loginRequest.RequestId, loginAttemptUri, usernameField, domainField, !string.IsNullOrWhiteSpace(stateContextValue));
 
         var loginFormBody = await new FormUrlEncodedContent(loginFormPayload).ReadAsStringAsync(cancellationToken);
 
@@ -901,6 +987,27 @@ internal static class CitrixExplicitAuth
         {
             return string.Empty;
         }
+    }
+
+    public static string? TryExtractMetaRefreshUrl(string html)
+    {
+        // Matches: <META HTTP-EQUIV="REFRESH" CONTENT="0; URL=/path">
+        // Attribute order and quoting may vary; use a simple case-insensitive regex.
+        var match = System.Text.RegularExpressions.Regex.Match(
+            html,
+            @"<meta[^>]+http-equiv\s*=\s*[""']?refresh[""']?[^>]+content\s*=\s*[""']?\d+\s*;\s*url\s*=\s*([^""'\s>]+)",
+            System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+        if (match.Success)
+        {
+            return match.Groups[1].Value.Trim();
+        }
+
+        // Also try attribute order reversed: CONTENT first, then HTTP-EQUIV
+        match = System.Text.RegularExpressions.Regex.Match(
+            html,
+            @"content\s*=\s*[""']?\d+\s*;\s*url\s*=\s*([^""'\s>]+)",
+            System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+        return match.Success ? match.Groups[1].Value.Trim() : null;
     }
 
     public static string FindAuthMessage(string xmlText)

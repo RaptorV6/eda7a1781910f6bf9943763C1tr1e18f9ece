@@ -317,6 +317,7 @@ app.MapPost("/api/citrix-diagnostics/explicit-login", async (
         : "No";
 
     var explicitLoginUri = new Uri(storeRootUri, "ExplicitAuth/Login");
+    var loginAttemptUri = new Uri(storeRootUri, "ExplicitAuth/LoginAttempt");
     var resourcesUri = new Uri(storeRootUri, "Resources/List");
     var authMethodsUri = new Uri(storeRootUri, "Authentication/GetAuthMethods");
 
@@ -337,8 +338,8 @@ app.MapPost("/api/citrix-diagnostics/explicit-login", async (
     string loginSubmitPreview = string.Empty;
     string resourcesPreview = string.Empty;
     string authResult = string.Empty;
+    string loginFormUrl = string.Empty;
     string loginPostUrl = string.Empty;
-    Uri? resolvedLoginFormUri = null;
     var authMethodCandidates = new List<string>();
     var loginAttemptResults = new List<string>();
 
@@ -402,11 +403,6 @@ app.MapPost("/api/citrix-diagnostics/explicit-login", async (
             }
         }
 
-        var loginFormHeaders = CitrixExplicitAuth.CreateBaseHeaders(storeRootUri, explicitLoginUri, httpsHeaderValue);
-        loginFormHeaders["X-Citrix-AM-CredentialTypes"] = CitrixExplicitAuth.FormCredentialTypes;
-        loginFormHeaders["X-Citrix-AM-LabelTypes"] = CitrixExplicitAuth.FormLabelTypes;
-
-        var loginUriCandidates = new List<Uri>();
         var authMethodsHeaders = CitrixExplicitAuth.CreateBaseHeaders(storeRootUri, authMethodsUri, httpsHeaderValue);
         authMethodsHeaders["X-Citrix-AM-CredentialTypes"] = CitrixExplicitAuth.FormCredentialTypes;
         authMethodsHeaders["X-Citrix-AM-LabelTypes"] = CitrixExplicitAuth.FormLabelTypes;
@@ -429,15 +425,6 @@ app.MapPost("/api/citrix-diagnostics/explicit-login", async (
                 foreach (var candidate in CitrixExplicitAuth.TryParseAuthMethodUris(authMethodsBody, storeRootUri))
                 {
                     authMethodCandidates.Add(candidate.ToString());
-                    if (!loginUriCandidates.Contains(candidate))
-                    {
-                        loginUriCandidates.Add(candidate);
-                    }
-                }
-
-                if (loginUriCandidates.Count > 0)
-                {
-                    break;
                 }
             }
             catch
@@ -446,152 +433,56 @@ app.MapPost("/api/citrix-diagnostics/explicit-login", async (
             }
         }
 
-        foreach (var fallbackUri in new[]
-                 {
-                     new Uri(storeRootUri, "Login"),
-                     explicitLoginUri,
-                     new Uri(storeRootUri, "Authentication/Login")
-                 })
-        {
-            if (!loginUriCandidates.Contains(fallbackUri))
-            {
-                loginUriCandidates.Add(fallbackUri);
-            }
-        }
-
-        CitrixAuthFormDefinition? authForm = null;
-
-        foreach (var candidateUri in loginUriCandidates)
-        {
-            var candidateHeaders = CitrixExplicitAuth.CreateBaseHeaders(storeRootUri, candidateUri, httpsHeaderValue);
-            candidateHeaders["X-Citrix-AM-CredentialTypes"] = CitrixExplicitAuth.FormCredentialTypes;
-            candidateHeaders["X-Citrix-AM-LabelTypes"] = CitrixExplicitAuth.FormLabelTypes;
-
-            foreach (var candidateMethod in new[] { HttpMethod.Post, HttpMethod.Get })
-            {
-                try
-                {
-                    using var loginFormRequest = CitrixExplicitAuth.CreateRequest(
-                        candidateMethod,
-                        candidateUri,
-                        candidateHeaders,
-                        candidateMethod == HttpMethod.Post ? string.Empty : null,
-                        candidateMethod == HttpMethod.Post ? "application/x-www-form-urlencoded; charset=UTF-8" : null);
-                    using var loginFormResponse = await client.SendAsync(loginFormRequest, cancellationToken);
-                    loginFormStatusCode = loginFormResponse.StatusCode;
-                    var loginFormResponseBody = await loginFormResponse.Content.ReadAsStringAsync(cancellationToken);
-                    loginFormPreview = CitrixExplicitAuth.Preview(loginFormResponseBody);
-                    authForm = CitrixExplicitAuth.TryParseAuthForm(loginFormResponseBody);
-                    var parseState = authForm is null
-                        ? "none"
-                        : authForm.HasCredentialInputs
-                            ? "credentials"
-                            : "incomplete";
-                    loginAttemptResults.Add($"{candidateMethod} {candidateUri} => {(int)loginFormResponse.StatusCode} parse={parseState}");
-
-                    if (authForm?.HasCredentialInputs == true)
-                    {
-                        resolvedLoginFormUri = candidateUri;
-                        break;
-                    }
-
-                    authForm = null;
-                }
-                catch (Exception exception)
-                {
-                    loginAttemptResults.Add($"{candidateMethod} {candidateUri} => EXCEPTION {exception.GetType().Name}: {exception.Message}");
-                }
-            }
-
-            if (authForm is not null)
-            {
-                break;
-            }
-        }
-
-        if (authForm is null)
-        {
-            return Results.Ok(new CitrixLoginResponse
-            {
-                Ok = false,
-                RequestId = loginRequest.RequestId,
-                BootstrapStatusCode = bootstrapStatusCode is null ? null : (int)bootstrapStatusCode.Value,
-                BootstrapLandingStatusCode = bootstrapLandingStatusCode is null ? null : (int)bootstrapLandingStatusCode.Value,
-                AuthMethodsStatusCode = authMethodsStatusCode is null ? null : (int)authMethodsStatusCode.Value,
-                LoginFormStatusCode = loginFormStatusCode is null ? null : (int)loginFormStatusCode.Value,
-                BootstrapFinalUrl = bootstrapFinalUrl,
-                BootstrapRedirectUrl = bootstrapRedirectUrl,
-                AuthMethodsUrl = authMethodsUri.ToString(),
-                AuthMethodCandidates = authMethodCandidates.Distinct(StringComparer.OrdinalIgnoreCase).ToArray(),
-                LoginFormUrl = loginUriCandidates.FirstOrDefault()?.ToString() ?? explicitLoginUri.ToString(),
-                LoginAttemptResults = loginAttemptResults.ToArray(),
-                CookieNames = CitrixExplicitAuth.GetCookieNames(handler.CookieContainer, storeRootUri),
-                CsrfTokenFound = !string.IsNullOrWhiteSpace(CitrixExplicitAuth.GetCookieValue(handler.CookieContainer, storeRootUri, "CsrfToken")),
-                BootstrapHeaders = bootstrapHeaders,
-                BootstrapBodyPreview = bootstrapBodyPreview,
-                BootstrapLandingPreview = bootstrapLandingPreview,
-                AuthMethodsPreview = authMethodsPreview,
-                LoginFormPreview = loginFormPreview,
-                ErrorType = "LoginFormParseFailed",
-                ErrorMessage = "Nepodařilo se rozparsovat explicit login formulář z Citrix odpovědi."
-            });
-        }
-
-        authResult = authForm.Result;
-
-        if (!authForm.HasCredentialInputs)
-        {
-            return Results.Ok(new CitrixLoginResponse
-            {
-                Ok = false,
-                RequestId = loginRequest.RequestId,
-                AuthResult = authResult,
-                BootstrapStatusCode = bootstrapStatusCode is null ? null : (int)bootstrapStatusCode.Value,
-                BootstrapLandingStatusCode = bootstrapLandingStatusCode is null ? null : (int)bootstrapLandingStatusCode.Value,
-                AuthMethodsStatusCode = authMethodsStatusCode is null ? null : (int)authMethodsStatusCode.Value,
-                LoginFormStatusCode = loginFormStatusCode is null ? null : (int)loginFormStatusCode.Value,
-                BootstrapFinalUrl = bootstrapFinalUrl,
-                BootstrapRedirectUrl = bootstrapRedirectUrl,
-                AuthMethodsUrl = authMethodsUri.ToString(),
-                AuthMethodCandidates = authMethodCandidates.Distinct(StringComparer.OrdinalIgnoreCase).ToArray(),
-                LoginFormUrl = resolvedLoginFormUri?.ToString() ?? loginUriCandidates.FirstOrDefault()?.ToString() ?? explicitLoginUri.ToString(),
-                LoginAttemptResults = loginAttemptResults.ToArray(),
-                BootstrapHeaders = bootstrapHeaders,
-                BootstrapBodyPreview = bootstrapBodyPreview,
-                BootstrapLandingPreview = bootstrapLandingPreview,
-                AuthMethodsPreview = authMethodsPreview,
-                LoginFormPreview = loginFormPreview,
-                CookieNames = CitrixExplicitAuth.GetCookieNames(handler.CookieContainer, storeRootUri),
-                CsrfTokenFound = !string.IsNullOrWhiteSpace(CitrixExplicitAuth.GetCookieValue(handler.CookieContainer, storeRootUri, "CsrfToken")),
-                ErrorType = "LoginFormIncomplete",
-                ErrorMessage = "Citrix login formulář neobsahuje očekávaná credential pole nebo submit button."
-            });
-        }
-
-        var loginPostUri = new Uri(resolvedLoginFormUri ?? explicitLoginUri, authForm.PostBack);
-        loginPostUrl = loginPostUri.ToString();
-
         var currentCsrfToken = CitrixExplicitAuth.GetCookieValue(handler.CookieContainer, storeRootUri, "CsrfToken");
-        var loginSubmitHeaders = CitrixExplicitAuth.CreateBaseHeaders(storeRootUri, loginPostUri, httpsHeaderValue, currentCsrfToken);
+        if (string.IsNullOrWhiteSpace(currentCsrfToken))
+        {
+            return Results.Ok(new CitrixLoginResponse
+            {
+                Ok = false,
+                RequestId = loginRequest.RequestId,
+                BootstrapStatusCode = bootstrapStatusCode is null ? null : (int)bootstrapStatusCode.Value,
+                BootstrapLandingStatusCode = bootstrapLandingStatusCode is null ? null : (int)bootstrapLandingStatusCode.Value,
+                AuthMethodsStatusCode = authMethodsStatusCode is null ? null : (int)authMethodsStatusCode.Value,
+                BootstrapFinalUrl = bootstrapFinalUrl,
+                BootstrapRedirectUrl = bootstrapRedirectUrl,
+                AuthMethodsUrl = authMethodsUri.ToString(),
+                AuthMethodCandidates = authMethodCandidates.Distinct(StringComparer.OrdinalIgnoreCase).ToArray(),
+                LoginFormUrl = explicitLoginUri.ToString(),
+                LoginPostUrl = loginAttemptUri.ToString(),
+                BootstrapHeaders = bootstrapHeaders,
+                BootstrapBodyPreview = bootstrapBodyPreview,
+                BootstrapLandingPreview = bootstrapLandingPreview,
+                AuthMethodsPreview = authMethodsPreview,
+                CookieNames = CitrixExplicitAuth.GetCookieNames(handler.CookieContainer, storeRootUri),
+                CsrfTokenFound = false,
+                ErrorType = "CsrfTokenMissing",
+                ErrorMessage = "Po bootstrapu nebyl nalezen cookie CsrfToken, takže nejde bezpečně odeslat LoginAttempt."
+            });
+        }
+
+        loginFormUrl = explicitLoginUri.ToString();
+        loginPostUrl = loginAttemptUri.ToString();
+        loginFormPreview = "Direct LoginAttempt flow selected from captured browser HAR; no separate login-form fetch was performed.";
+
+        var loginSubmitHeaders = CitrixExplicitAuth.CreateBaseHeaders(storeRootUri, loginAttemptUri, httpsHeaderValue, currentCsrfToken);
+        loginSubmitHeaders["X-Citrix-AM-CredentialTypes"] = CitrixExplicitAuth.FormCredentialTypes;
+        loginSubmitHeaders["X-Citrix-AM-LabelTypes"] = CitrixExplicitAuth.FormLabelTypes;
 
         var loginFormPayload = new Dictionary<string, string>(StringComparer.Ordinal)
         {
-            [authForm.UsernameId] = loginRequest.Username.Trim(),
-            [authForm.PasswordId] = loginRequest.Password,
-            [authForm.SubmitButtonId] = authForm.SubmitButtonValue,
-            ["StateContext"] = authForm.StateContext
+            ["username"] = loginRequest.Username.Trim(),
+            ["password"] = loginRequest.Password,
+            ["saveCredentials"] = "false",
+            ["domain"] = loginRequest.Domain.Trim(),
+            ["loginBtn"] = "Přihlásit",
+            ["StateContext"] = string.Empty
         };
-
-        if (!string.IsNullOrWhiteSpace(authForm.DomainId))
-        {
-            loginFormPayload[authForm.DomainId] = loginRequest.Domain.Trim();
-        }
 
         var loginFormBody = await new FormUrlEncodedContent(loginFormPayload).ReadAsStringAsync(cancellationToken);
 
         using (var loginSubmitRequest = CitrixExplicitAuth.CreateRequest(
             HttpMethod.Post,
-            loginPostUri,
+            loginAttemptUri,
             loginSubmitHeaders,
             loginFormBody,
             "application/x-www-form-urlencoded; charset=UTF-8"))
@@ -600,9 +491,8 @@ app.MapPost("/api/citrix-diagnostics/explicit-login", async (
             loginSubmitStatusCode = loginSubmitResponse.StatusCode;
             var loginSubmitBody = await loginSubmitResponse.Content.ReadAsStringAsync(cancellationToken);
             loginSubmitPreview = CitrixExplicitAuth.Preview(loginSubmitBody);
-
-            var loginSubmitParsed = CitrixExplicitAuth.TryParseAuthForm(loginSubmitBody);
-            authResult = loginSubmitParsed?.Result ?? CitrixExplicitAuth.FindElementValue(loginSubmitBody, "Result");
+            loginAttemptResults.Add($"POST {loginAttemptUri} => {(int)loginSubmitResponse.StatusCode}");
+            authResult = CitrixExplicitAuth.FindElementValue(loginSubmitBody, "Result");
         }
 
         var cookieNames = CitrixExplicitAuth.GetCookieNames(handler.CookieContainer, storeRootUri);
@@ -627,7 +517,7 @@ app.MapPost("/api/citrix-diagnostics/explicit-login", async (
                 BootstrapRedirectUrl = bootstrapRedirectUrl,
                 AuthMethodsUrl = authMethodsUri.ToString(),
                 AuthMethodCandidates = authMethodCandidates.Distinct(StringComparer.OrdinalIgnoreCase).ToArray(),
-                LoginFormUrl = (resolvedLoginFormUri ?? explicitLoginUri).ToString(),
+                LoginFormUrl = loginFormUrl,
                 LoginPostUrl = loginPostUrl,
                 LoginAttemptResults = loginAttemptResults.ToArray(),
                 CookieNames = cookieNames,
@@ -673,7 +563,7 @@ app.MapPost("/api/citrix-diagnostics/explicit-login", async (
                 BootstrapRedirectUrl = bootstrapRedirectUrl,
                 AuthMethodsUrl = authMethodsUri.ToString(),
                 AuthMethodCandidates = authMethodCandidates.Distinct(StringComparer.OrdinalIgnoreCase).ToArray(),
-                LoginFormUrl = (resolvedLoginFormUri ?? explicitLoginUri).ToString(),
+                LoginFormUrl = loginFormUrl,
                 LoginPostUrl = loginPostUrl,
                 ResourcesUrl = resourcesUri.ToString(),
                 LoginAttemptResults = loginAttemptResults.ToArray(),
@@ -715,7 +605,7 @@ app.MapPost("/api/citrix-diagnostics/explicit-login", async (
             BootstrapRedirectUrl = bootstrapRedirectUrl,
             AuthMethodsUrl = authMethodsUri.ToString(),
             AuthMethodCandidates = authMethodCandidates.Distinct(StringComparer.OrdinalIgnoreCase).ToArray(),
-            LoginFormUrl = resolvedLoginFormUri?.ToString() ?? explicitLoginUri.ToString(),
+            LoginFormUrl = loginFormUrl,
             LoginPostUrl = loginPostUrl,
             ResourcesUrl = resourcesUri.ToString(),
             LoginAttemptResults = loginAttemptResults.ToArray(),
@@ -769,7 +659,7 @@ internal sealed class CitrixAuthFormDefinition
 
 internal static class CitrixExplicitAuth
 {
-    public const string FormCredentialTypes = "none, username, domain, password, newpassword, passcode, savecredentials, textcredential, webview";
+    public const string FormCredentialTypes = "none, username, domain, password, newpassword, passcode, savecredentials, textcredential, webview, webview";
     public const string FormLabelTypes = "none, plain, heading, information, warning, error, confirmation, image";
 
     public static Dictionary<string, string> CreateBaseHeaders(Uri storeRootUri, Uri requestUri, string httpsHeaderValue, string? csrfToken = null)

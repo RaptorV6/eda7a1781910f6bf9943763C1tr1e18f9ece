@@ -22,11 +22,15 @@ public sealed class CitrixLoginResponse
 
     public int? ResourcesStatusCode { get; init; }
 
+    public int? AuthMethodsStatusCode { get; init; }
+
     public string LoginFormUrl { get; init; } = string.Empty;
 
     public string LoginPostUrl { get; init; } = string.Empty;
 
     public string ResourcesUrl { get; init; } = string.Empty;
+
+    public string AuthMethodsUrl { get; init; } = string.Empty;
 
     public string[] CookieNames { get; init; } = [];
 
@@ -37,6 +41,8 @@ public sealed class CitrixLoginResponse
     public string LoginSubmitPreview { get; init; } = string.Empty;
 
     public string ResourcesPreview { get; init; } = string.Empty;
+
+    public string AuthMethodsPreview { get; init; } = string.Empty;
 
     public JsonElement? ResourcesPayload { get; init; }
 

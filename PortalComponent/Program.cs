@@ -540,6 +540,16 @@ app.MapPost("/api/citrix-diagnostics/explicit-login", async (
                 currentCsrfToken = refreshedCsrfToken;
             }
 
+            // Log response headers so we can identify who returns 404 (StoreFront vs proxy vs ADC)
+            if (loginFormGetResponse.StatusCode == HttpStatusCode.NotFound)
+            {
+                var responseHeaderDump = loginFormGetResponse.Headers
+                    .Concat(loginFormGetResponse.Content.Headers)
+                    .Select(h => $"{h.Key}={string.Join(",", h.Value)}")
+                    .ToArray();
+                loginAttemptResults.Add($"[loginForm-GET-404-headers] {string.Join(" | ", responseHeaderDump)}");
+            }
+
             logger.LogInformation(
                 "Citrix login form fetched. RequestId: {RequestId}. StatusCode: {StatusCode}. HasCredentialInputs: {HasCredentialInputs}. StateContextPresent: {StateContextPresent}. PostBack: {PostBack}. Cookies: {Cookies}",
                 loginRequest.RequestId,
@@ -548,6 +558,36 @@ app.MapPost("/api/citrix-diagnostics/explicit-login", async (
                 !string.IsNullOrWhiteSpace(parsedLoginForm?.StateContext),
                 parsedLoginForm?.PostBack ?? "(none)",
                 string.Join(", ", CitrixExplicitAuth.GetCookieNames(handler.CookieContainer, storeRootUri)));
+        }
+
+        // If GET returned 404, try POST ExplicitAuth/Login (some StoreFront versions or proxy configs
+        // reject the GET variant). POST with empty body triggers the same form-definition response.
+        if (loginFormStatusCode == HttpStatusCode.NotFound && parsedLoginForm is null)
+        {
+            var loginFormPostHeaders = CitrixExplicitAuth.CreateBaseHeaders(storeRootUri, explicitLoginUri, httpsHeaderValue, currentCsrfToken, forwardedAcceptLanguage, forwardedUserAgent);
+            loginFormPostHeaders["X-Citrix-AM-CredentialTypes"] = CitrixExplicitAuth.FormCredentialTypes;
+            loginFormPostHeaders["X-Citrix-AM-LabelTypes"] = CitrixExplicitAuth.FormLabelTypes;
+
+            using var loginFormPostRequest = CitrixExplicitAuth.CreateRequest(HttpMethod.Post, explicitLoginUri, loginFormPostHeaders, string.Empty, "application/x-www-form-urlencoded; charset=UTF-8");
+            using var loginFormPostResponse = await client.SendAsync(loginFormPostRequest, cancellationToken);
+            loginFormStatusCode = loginFormPostResponse.StatusCode;
+            var loginFormPostBody = await loginFormPostResponse.Content.ReadAsStringAsync(cancellationToken);
+            loginFormPreview = CitrixExplicitAuth.Preview(loginFormPostBody);
+            parsedLoginForm = CitrixExplicitAuth.TryParseAuthForm(loginFormPostBody);
+            loginAttemptResults.Add($"[loginForm-POST-fallback] {(int)loginFormStatusCode}");
+
+            var refreshedCsrfToken2 = CitrixExplicitAuth.GetCookieValue(handler.CookieContainer, storeRootUri, "CsrfToken");
+            if (!string.IsNullOrWhiteSpace(refreshedCsrfToken2))
+                currentCsrfToken = refreshedCsrfToken2;
+
+            if (loginFormPostResponse.StatusCode == HttpStatusCode.NotFound)
+            {
+                var responseHeaderDump = loginFormPostResponse.Headers
+                    .Concat(loginFormPostResponse.Content.Headers)
+                    .Select(h => $"{h.Key}={string.Join(",", h.Value)}")
+                    .ToArray();
+                loginAttemptResults.Add($"[loginForm-POST-404-headers] {string.Join(" | ", responseHeaderDump)}");
+            }
         }
 
         // Use PostBack URL from form definition if available

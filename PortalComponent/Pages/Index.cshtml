@@ -124,6 +124,7 @@
      data-panel-title="@Model.PanelTitle"
      data-body-preview-limit="@Model.BodyPreviewLimit"
      data-client-log-endpoint="@Model.ClientLogEndpoint"
+     data-server-probe-endpoint="@Model.ServerProbeEndpoint"
      data-request-id="@Model.DiagnosticRequestId">
     <div class="mb-3">
         <h1 class="citrix-diagnostics-title">@Model.PanelTitle</h1>
@@ -166,6 +167,7 @@
             const normalizedBaseUrl = rawBaseUrl ? rawBaseUrl.replace(/\/?$/, '/') : '';
             const bodyPreviewLimit = Number.parseInt(root.dataset.bodyPreviewLimit || '1200', 10) || 1200;
             const clientLogEndpoint = root.dataset.clientLogEndpoint || '';
+            const serverProbeEndpoint = root.dataset.serverProbeEndpoint || '';
             const requestId = root.dataset.requestId || `client-${Date.now()}`;
             let clientLogSequence = 0;
 
@@ -316,6 +318,66 @@
                 };
             };
 
+            const runServerSideProbe = async (stepName, requestUrl, requestOptions) => {
+                if (!serverProbeEndpoint) {
+                    log.warn(stepName, 'Server-side probe endpoint není nastaven.');
+                    return;
+                }
+
+                const normalizedHeaders = {};
+                const sourceHeaders = requestOptions.headers || {};
+
+                if (sourceHeaders instanceof Headers) {
+                    sourceHeaders.forEach((value, key) => {
+                        normalizedHeaders[key] = value;
+                    });
+                } else {
+                    Object.assign(normalizedHeaders, sourceHeaders);
+                }
+
+                const bodyValue = typeof requestOptions.body === 'string'
+                    ? requestOptions.body
+                    : requestOptions.body instanceof URLSearchParams
+                        ? requestOptions.body.toString()
+                        : requestOptions.body == null
+                            ? ''
+                            : String(requestOptions.body);
+
+                log.info(stepName, `Spouštím server-side probe přes ${serverProbeEndpoint}`);
+
+                try {
+                    const response = await fetch(serverProbeEndpoint, {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json'
+                        },
+                        body: JSON.stringify({
+                            requestId,
+                            step: stepName,
+                            url: requestUrl,
+                            method: requestOptions.method || 'GET',
+                            body: bodyValue,
+                            contentType: normalizedHeaders['Content-Type'] || normalizedHeaders['content-type'] || '',
+                            headers: normalizedHeaders
+                        })
+                    });
+
+                    const probeText = await response.text();
+                    let probePayload = null;
+
+                    try {
+                        probePayload = JSON.parse(probeText);
+                    } catch (error) {
+                        log.error(stepName, `Server-side probe vrátil nevalidní JSON: ${truncate(probeText)}`);
+                        return;
+                    }
+
+                    log.info(stepName, `Server-side probe výsledek: ${getSafeJsonPreview(probePayload)}`);
+                } catch (error) {
+                    log.error(stepName, `Server-side probe selhal: ${error instanceof Error ? error.message : String(error)}`);
+                }
+            };
+
             const readAttributes = (xmlDocument, tagName, attributeNames) => {
                 const element = xmlDocument.getElementsByTagName(tagName)[0];
                 if (!element) {
@@ -435,6 +497,9 @@
                 log.info('Init', `Normalizovaná Citrix URL: ${normalizedBaseUrl || '(není nastaveno)'}`);
                 log.info('Init', `BodyPreviewLimit: ${bodyPreviewLimit}`);
                 log.info('Init', `Client log endpoint: ${clientLogEndpoint || '(není nastaveno)'}`);
+                log.info('Init', `Server probe endpoint: ${serverProbeEndpoint || '(není nastaveno)'}`);
+                log.info('Init', `Browser origin: ${window.location.origin}`);
+                log.info('Init', `Citrix URL origin: ${normalizedBaseUrl ? new URL(normalizedBaseUrl).origin : '(není nastaveno)'}`);
 
                 if (!normalizedBaseUrl) {
                     setStatus('Citrix BaseUrl není nastavená.', 'error');
@@ -459,6 +524,14 @@
                 }).catch((error) => {
                     setStatus('Nepodařilo se načíst konfiguraci.', 'error');
                     log.error('Home/Configuration', `Fetch selhal. Pravděpodobně CORS / cookies / SameSite / certifikát / síť. Detail: ${error instanceof Error ? error.message : String(error)}`);
+                    void runServerSideProbe('Home/Configuration', configurationUrl, {
+                        method: 'POST',
+                        body: '',
+                        credentials: 'include',
+                        headers: {
+                            'X-Citrix-IsUsingHTTPS': httpsHeaderValue
+                        }
+                    });
                     showEmptyState('Konfigurace Citrixu se nepodařila načíst.');
                     throw error;
                 });
@@ -551,6 +624,15 @@
                 }).catch((error) => {
                     setStatus('Nepodařilo se načíst seznam aplikací.', 'error');
                     log.error('Resources/List', `Fetch selhal. Pravděpodobně CORS / cookies / SameSite / certifikát / síť. Detail: ${error instanceof Error ? error.message : String(error)}`);
+                    void runServerSideProbe('Resources/List', listUrl, {
+                        method: 'POST',
+                        credentials: 'include',
+                        headers: listHeaders,
+                        body: new URLSearchParams({
+                            format: 'json',
+                            resourceDetails: 'Default'
+                        })
+                    });
                     showEmptyState('Seznam aplikací se nepodařilo načíst.');
                     throw error;
                 });

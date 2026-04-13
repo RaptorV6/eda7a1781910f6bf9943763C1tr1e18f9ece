@@ -30,6 +30,8 @@ public class IndexModel : PageModel
 
     public string ClientLogEndpoint { get; private set; } = "/api/citrix-diagnostics/client-log";
 
+    public string ServerProbeEndpoint { get; private set; } = "/api/citrix-diagnostics/server-probe";
+
     public string DiagnosticRequestId { get; private set; } = string.Empty;
 
     public void OnGet()

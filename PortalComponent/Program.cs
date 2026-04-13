@@ -482,13 +482,20 @@ app.MapPost("/api/citrix-diagnostics/explicit-login", async (
                     var loginFormResponseBody = await loginFormResponse.Content.ReadAsStringAsync(cancellationToken);
                     loginFormPreview = CitrixExplicitAuth.Preview(loginFormResponseBody);
                     authForm = CitrixExplicitAuth.TryParseAuthForm(loginFormResponseBody);
-                    loginAttemptResults.Add($"{candidateMethod} {candidateUri} => {(int)loginFormResponse.StatusCode} parse={(authForm is not null ? "ok" : "none")}");
+                    var parseState = authForm is null
+                        ? "none"
+                        : authForm.HasCredentialInputs
+                            ? "credentials"
+                            : "incomplete";
+                    loginAttemptResults.Add($"{candidateMethod} {candidateUri} => {(int)loginFormResponse.StatusCode} parse={parseState}");
 
-                    if (authForm is not null)
+                    if (authForm?.HasCredentialInputs == true)
                     {
                         resolvedLoginFormUri = candidateUri;
                         break;
                     }
+
+                    authForm = null;
                 }
                 catch (Exception exception)
                 {
@@ -834,6 +841,17 @@ internal static class CitrixExplicitAuth
         {
             var document = XDocument.Parse(xmlText);
             var credentials = document.Descendants().Where(element => element.Name.LocalName == "Credential").ToArray();
+            var postBack = document.Descendants().FirstOrDefault(element => element.Name.LocalName == "PostBack")?.Value ?? string.Empty;
+            var stateContext = document.Descendants().FirstOrDefault(element => element.Name.LocalName == "StateContext")?.Value ?? string.Empty;
+            var result = document.Descendants().FirstOrDefault(element => element.Name.LocalName == "Result")?.Value ?? string.Empty;
+
+            if (credentials.Length == 0
+                && string.IsNullOrWhiteSpace(postBack)
+                && string.IsNullOrWhiteSpace(stateContext)
+                && string.IsNullOrWhiteSpace(result))
+            {
+                return null;
+            }
 
             string FindCredentialId(string typeName) =>
                 credentials
@@ -858,9 +876,9 @@ internal static class CitrixExplicitAuth
 
             return new CitrixAuthFormDefinition
             {
-                Result = document.Descendants().FirstOrDefault(element => element.Name.LocalName == "Result")?.Value ?? string.Empty,
-                PostBack = document.Descendants().FirstOrDefault(element => element.Name.LocalName == "PostBack")?.Value ?? string.Empty,
-                StateContext = document.Descendants().FirstOrDefault(element => element.Name.LocalName == "StateContext")?.Value ?? string.Empty,
+                Result = result,
+                PostBack = postBack,
+                StateContext = stateContext,
                 UsernameId = FindCredentialId("username"),
                 PasswordId = FindCredentialId("password"),
                 DomainId = FindCredentialId("domain"),

@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Mvc.RazorPages;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
+using System.Diagnostics;
 
 namespace PortalComponent.Pages;
 
@@ -24,6 +25,10 @@ public class IndexModel : PageModel
 
     public int BodyPreviewLimit { get; private set; } = DefaultBodyPreviewLimit;
 
+    public string ClientLogEndpoint { get; private set; } = "/api/citrix-diagnostics/client-log";
+
+    public string DiagnosticRequestId { get; private set; } = string.Empty;
+
     public void OnGet()
     {
         var diagnosticsSection = _configuration.GetSection("CitrixDiagnostics");
@@ -31,11 +36,13 @@ public class IndexModel : PageModel
         CitrixBaseUrl = diagnosticsSection["BaseUrl"]?.Trim() ?? string.Empty;
         PanelTitle = diagnosticsSection["PanelTitle"]?.Trim() ?? DefaultPanelTitle;
         BodyPreviewLimit = diagnosticsSection.GetValue<int?>("BodyPreviewLimit") ?? DefaultBodyPreviewLimit;
+        DiagnosticRequestId = Activity.Current?.Id ?? HttpContext.TraceIdentifier;
 
         var hasConfiguredUrl = !string.IsNullOrWhiteSpace(CitrixBaseUrl);
 
         _logger.LogInformation(
-            "Citrix PoC page opened. Path: {Path}. BaseUrl configured: {HasConfiguredUrl}. BaseUrl: {BaseUrl}. BodyPreviewLimit: {BodyPreviewLimit}",
+            "Citrix PoC page opened. RequestId: {RequestId}. Path: {Path}. BaseUrl configured: {HasConfiguredUrl}. BaseUrl: {BaseUrl}. BodyPreviewLimit: {BodyPreviewLimit}",
+            DiagnosticRequestId,
             HttpContext?.Request?.Path.Value,
             hasConfiguredUrl,
             CitrixBaseUrl,

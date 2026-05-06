@@ -279,6 +279,7 @@ app.MapPost("/api/citrix-launch-status", async (
     string session,
     string resourceId,
     HttpContext httpContext,
+    IConfiguration configuration,
     ILoggerFactory loggerFactory,
     CitrixSessionCache sessionCache,
     CancellationToken cancellationToken) =>
@@ -328,11 +329,53 @@ app.MapPost("/api/citrix-launch-status", async (
 
     var bodyText = await response.Content.ReadAsStringAsync(cancellationToken);
 
+    // Rewrite fileFetchUrl from internal StoreFront host (citrixvpx01.fis.acr) to public gateway
+    // (pnagent.fis.acr). The browser-side receiver:// URL uses fileFetchUrl as the host that
+    // Citrix Workspace App will fetch the ICA from. Workspace App on the client typically can ONLY
+    // reach the public gateway; the internal StoreFront host is server-side only.
+    var publicGatewayHost = configuration["CitrixDiagnostics:PublicGatewayHost"];
+    var publicStorePath = configuration["CitrixDiagnostics:PublicStorePath"];
+    if (!string.IsNullOrWhiteSpace(publicGatewayHost) && response.IsSuccessStatusCode)
+    {
+        try
+        {
+            using var doc = JsonDocument.Parse(bodyText);
+            if (doc.RootElement.TryGetProperty("fileFetchUrl", out var fetchUrlEl) && fetchUrlEl.ValueKind == JsonValueKind.String)
+            {
+                var original = fetchUrlEl.GetString();
+                if (Uri.TryCreate(original, UriKind.Absolute, out var originalUri))
+                {
+                    var rewrittenPath = !string.IsNullOrWhiteSpace(publicStorePath)
+                        ? publicStorePath.TrimEnd('/') + "/clientAssistant/getIcaFile"
+                        : originalUri.AbsolutePath;
+                    var rewritten = $"https://{publicGatewayHost}{rewrittenPath}";
+
+                    var dict = new Dictionary<string, object?>();
+                    foreach (var prop in doc.RootElement.EnumerateObject())
+                    {
+                        dict[prop.Name] = prop.Name == "fileFetchUrl"
+                            ? rewritten
+                            : JsonSerializer.Deserialize<object>(prop.Value.GetRawText());
+                    }
+                    bodyText = JsonSerializer.Serialize(dict);
+
+                    logger.LogInformation(
+                        "Rewrote fileFetchUrl from {Original} to {Rewritten}",
+                        original, rewritten);
+                }
+            }
+        }
+        catch (JsonException ex)
+        {
+            logger.LogWarning(ex, "Failed to parse GetLaunchStatus JSON for fileFetchUrl rewrite. Returning original.");
+        }
+    }
+
     logger.LogInformation(
         "Citrix launch status. Session: {Session}. ResourceId: {ResourceId}. StatusCode: {StatusCode}",
         session, resourceId, (int)response.StatusCode);
 
-    return Results.Content(bodyText, response.Content.Headers.ContentType?.ToString() ?? "application/json", statusCode: (int)response.StatusCode);
+    return Results.Content(bodyText, "application/json", statusCode: (int)response.StatusCode);
 });
 
 // Generic authenticated proxy to StoreFront. Used for ICA download (app launch) and icon fetch.

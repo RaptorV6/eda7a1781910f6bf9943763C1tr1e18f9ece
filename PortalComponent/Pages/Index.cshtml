@@ -626,18 +626,29 @@
                     name.textContent = resource.name || '(bez názvu)';
 
                     if (launchPath) {
-                        listItem.addEventListener('click', () => {
-                            log.info('Launch', `Klik na "${resource.name}". Spouštím přes ICA: ${launchPath}`);
-                            // Use hidden iframe instead of window.location.href so browser treats this as
-                            // embedded content (Sec-Fetch-Mode=no-cors) instead of top-level navigation.
-                            // With navigation, browser MUST show download bar for application/x-ica.
-                            // With iframe + registered MIME handler, browser hands off to Citrix Workspace App
-                            // silently — same UX as official StoreFront.
+                        listItem.addEventListener('click', async () => {
+                            log.info('Launch', `Klik na "${resource.name}".`);
+
+                            // Extract resourceId from launchurl: "Resources/LaunchIca/<base64-id>.ica"
+                            const match = launchPath.match(/Resources\/LaunchIca\/([^.\/]+)\.ica$/i);
+                            if (match) {
+                                const resourceId = match[1];
+                                try {
+                                    const statusResp = await fetch(
+                                        `/api/citrix-launch-status?session=${encodeURIComponent(sessionToken)}&resourceId=${encodeURIComponent(resourceId)}`,
+                                        { method: 'POST' });
+                                    const statusText = await statusResp.text();
+                                    log.info('Launch', `[DIAG] GetLaunchStatus response (${statusResp.status}): ${statusText}`);
+                                } catch (e) {
+                                    log.warn('Launch', `[DIAG] GetLaunchStatus failed: ${e}`);
+                                }
+                            }
+
+                            // Fallback: hidden iframe ICA download (current path, requires user "always open" set).
                             const launcher = document.createElement('iframe');
                             launcher.style.display = 'none';
                             launcher.src = proxyUrl(launchPath);
                             document.body.appendChild(launcher);
-                            // Cleanup after Workspace App has had time to grab the file.
                             setTimeout(() => { try { launcher.remove(); } catch {} }, 10000);
                         });
                     }

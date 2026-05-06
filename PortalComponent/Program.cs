@@ -271,6 +271,70 @@ app.MapPost("/api/citrix-diagnostics/server-probe", async (
     }
 });
 
+// Replicates official StoreFront launch flow: POST GetLaunchStatus with createFileFetchTicket=true.
+// Returns the StoreFront JSON to the browser so it can use the file fetch ticket / launch URL with
+// receiver: protocol scheme (silent handoff to Workspace App, no download bar).
+app.MapPost("/api/citrix-launch-status", async (
+    string session,
+    string resourceId,
+    HttpContext httpContext,
+    ILoggerFactory loggerFactory,
+    CitrixSessionCache sessionCache,
+    CancellationToken cancellationToken) =>
+{
+    var logger = loggerFactory.CreateLogger("CitrixLaunchStatus");
+
+    if (string.IsNullOrWhiteSpace(session) || string.IsNullOrWhiteSpace(resourceId))
+    {
+        return Results.BadRequest(new { error = "Missing session or resourceId." });
+    }
+
+    var entry = sessionCache.Get(session);
+    if (entry is null)
+    {
+        return Results.StatusCode(StatusCodes.Status401Unauthorized);
+    }
+
+    // resourceId is the URL-safe base64 piece from launchurl (e.g. "MjJDb250cm9sbGVyLk1TIEVkZ2U-")
+    if (!System.Text.RegularExpressions.Regex.IsMatch(resourceId, "^[A-Za-z0-9_-]+$"))
+    {
+        return Results.BadRequest(new { error = "Invalid resourceId format." });
+    }
+
+    var statusUri = new Uri(entry.StoreRootUri, $"Resources/GetLaunchStatus/{resourceId}");
+
+    using var handler = new HttpClientHandler
+    {
+        AllowAutoRedirect = false,
+        UseCookies = true,
+        CookieContainer = entry.Cookies,
+        AutomaticDecompression = DecompressionMethods.All
+    };
+    using var client = new HttpClient(handler) { Timeout = TimeSpan.FromSeconds(20) };
+
+    var httpsHeaderValue = string.Equals(entry.StoreRootUri.Scheme, Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase) ? "Yes" : "No";
+    var csrfToken = CitrixExplicitAuth.GetCookieValue(entry.Cookies, entry.StoreRootUri, "CsrfToken");
+    var headers = CitrixExplicitAuth.CreateBaseHeaders(
+        entry.StoreRootUri, statusUri, httpsHeaderValue, csrfToken,
+        httpContext.Request.Headers.AcceptLanguage.ToString(),
+        httpContext.Request.Headers.UserAgent.ToString());
+    headers["Accept"] = "application/json, text/javascript, */*; q=0.01";
+
+    using var request = CitrixExplicitAuth.CreateRequest(
+        HttpMethod.Post, statusUri, headers,
+        "createFileFetchTicket=true",
+        "application/x-www-form-urlencoded; charset=UTF-8");
+    using var response = await client.SendAsync(request, cancellationToken);
+
+    var bodyText = await response.Content.ReadAsStringAsync(cancellationToken);
+
+    logger.LogInformation(
+        "Citrix launch status. Session: {Session}. ResourceId: {ResourceId}. StatusCode: {StatusCode}. ContentType: {ContentType}. BodyLength: {BodyLength}",
+        session, resourceId, (int)response.StatusCode, response.Content.Headers.ContentType?.ToString(), bodyText.Length);
+
+    return Results.Content(bodyText, response.Content.Headers.ContentType?.ToString() ?? "application/json", statusCode: (int)response.StatusCode);
+});
+
 // Generic authenticated proxy to StoreFront. Used for ICA download (app launch) and icon fetch.
 // Browser holds opaque session token; cookies stay server-side. Path is constrained to Resources/* to prevent SSRF.
 app.MapGet("/api/citrix-proxy", async (

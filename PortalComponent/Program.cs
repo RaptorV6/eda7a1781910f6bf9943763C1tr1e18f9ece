@@ -1,3 +1,4 @@
+using Microsoft.Extensions.Caching.Memory;
 using PortalComponent.Models;
 using System.Net;
 using System.Net.Http.Headers;
@@ -9,6 +10,8 @@ var builder = WebApplication.CreateBuilder(args);
 
 // Add services to the container.
 builder.Services.AddRazorPages();
+builder.Services.AddMemoryCache();
+builder.Services.AddSingleton<CitrixSessionCache>();
 
 var app = builder.Build();
 
@@ -272,6 +275,7 @@ app.MapPost("/api/citrix-diagnostics/explicit-login", async (
     CitrixLoginRequest loginRequest,
     HttpContext httpContext,
     ILoggerFactory loggerFactory,
+    CitrixSessionCache sessionCache,
     CancellationToken cancellationToken) =>
 {
     var logger = loggerFactory.CreateLogger("CitrixExplicitLogin");
@@ -517,77 +521,40 @@ app.MapPost("/api/citrix-diagnostics/explicit-login", async (
         loginPostUrl = loginAttemptUri.ToString();
 
         // Step 1: GET ExplicitAuth/Login to obtain StateContext.
-        // Citrix StoreFront requires a valid StateContext in LoginAttempt – without it the server
-        // responds with <Result>fail</Result><LogMessage>sessiontimeout</LogMessage>.
+        // Step 1: GET or POST ExplicitAuth/Login to obtain the auth form definition (StateContext,
+        // field IDs, PostBack URL). On this StoreFront deployment IIS rejects GET with 404, so try
+        // POST first and fall back to GET for other environments.
         CitrixAuthFormDefinition? parsedLoginForm = null;
-        var loginFormGetHeaders = CitrixExplicitAuth.CreateBaseHeaders(storeRootUri, explicitLoginUri, httpsHeaderValue, currentCsrfToken, forwardedAcceptLanguage, forwardedUserAgent);
-        loginFormGetHeaders["X-Citrix-AM-CredentialTypes"] = CitrixExplicitAuth.FormCredentialTypes;
-        loginFormGetHeaders["X-Citrix-AM-LabelTypes"] = CitrixExplicitAuth.FormLabelTypes;
-
-        using (var loginFormGetRequest = CitrixExplicitAuth.CreateRequest(HttpMethod.Get, explicitLoginUri, loginFormGetHeaders))
-        using (var loginFormGetResponse = await client.SendAsync(loginFormGetRequest, cancellationToken))
+        foreach (var loginFormMethod in new[] { HttpMethod.Post, HttpMethod.Get })
         {
-            loginFormStatusCode = loginFormGetResponse.StatusCode;
-            var loginFormBodyRaw = await loginFormGetResponse.Content.ReadAsStringAsync(cancellationToken);
+            var loginFormHeaders = CitrixExplicitAuth.CreateBaseHeaders(storeRootUri, explicitLoginUri, httpsHeaderValue, currentCsrfToken, forwardedAcceptLanguage, forwardedUserAgent);
+            loginFormHeaders["X-Citrix-AM-CredentialTypes"] = CitrixExplicitAuth.FormCredentialTypes;
+            loginFormHeaders["X-Citrix-AM-LabelTypes"] = CitrixExplicitAuth.FormLabelTypes;
+
+            using var loginFormRequest = CitrixExplicitAuth.CreateRequest(
+                loginFormMethod, explicitLoginUri, loginFormHeaders,
+                loginFormMethod == HttpMethod.Post ? string.Empty : null,
+                loginFormMethod == HttpMethod.Post ? "application/x-www-form-urlencoded; charset=UTF-8" : null);
+            using var loginFormResponse = await client.SendAsync(loginFormRequest, cancellationToken);
+
+            loginFormStatusCode = loginFormResponse.StatusCode;
+            var loginFormBodyRaw = await loginFormResponse.Content.ReadAsStringAsync(cancellationToken);
             loginFormPreview = CitrixExplicitAuth.Preview(loginFormBodyRaw);
-            loginFormUrl = loginFormGetResponse.RequestMessage?.RequestUri?.ToString() ?? explicitLoginUri.ToString();
+            loginFormUrl = loginFormResponse.RequestMessage?.RequestUri?.ToString() ?? explicitLoginUri.ToString();
             parsedLoginForm = CitrixExplicitAuth.TryParseAuthForm(loginFormBodyRaw);
 
-            // Refresh CsrfToken – the login form GET may update it
             var refreshedCsrfToken = CitrixExplicitAuth.GetCookieValue(handler.CookieContainer, storeRootUri, "CsrfToken");
             if (!string.IsNullOrWhiteSpace(refreshedCsrfToken))
-            {
                 currentCsrfToken = refreshedCsrfToken;
-            }
-
-            // Log response headers so we can identify who returns 404 (StoreFront vs proxy vs ADC)
-            if (loginFormGetResponse.StatusCode == HttpStatusCode.NotFound)
-            {
-                var responseHeaderDump = loginFormGetResponse.Headers
-                    .Concat(loginFormGetResponse.Content.Headers)
-                    .Select(h => $"{h.Key}={string.Join(",", h.Value)}")
-                    .ToArray();
-                loginAttemptResults.Add($"[loginForm-GET-404-headers] {string.Join(" | ", responseHeaderDump)}");
-            }
 
             logger.LogInformation(
-                "Citrix login form fetched. RequestId: {RequestId}. StatusCode: {StatusCode}. HasCredentialInputs: {HasCredentialInputs}. StateContextPresent: {StateContextPresent}. PostBack: {PostBack}. Cookies: {Cookies}",
-                loginRequest.RequestId,
-                (int)loginFormGetResponse.StatusCode,
-                parsedLoginForm?.HasCredentialInputs,
-                !string.IsNullOrWhiteSpace(parsedLoginForm?.StateContext),
-                parsedLoginForm?.PostBack ?? "(none)",
-                string.Join(", ", CitrixExplicitAuth.GetCookieNames(handler.CookieContainer, storeRootUri)));
-        }
+                "Citrix login form fetched. RequestId: {RequestId}. Method: {Method}. StatusCode: {StatusCode}. HasCredentialInputs: {HasCredentialInputs}. StateContextPresent: {StateContextPresent}. PostBack: {PostBack}",
+                loginRequest.RequestId, loginFormMethod, (int)loginFormResponse.StatusCode,
+                parsedLoginForm?.HasCredentialInputs, !string.IsNullOrWhiteSpace(parsedLoginForm?.StateContext),
+                parsedLoginForm?.PostBack ?? "(none)");
 
-        // If GET returned 404, try POST ExplicitAuth/Login (some StoreFront versions or proxy configs
-        // reject the GET variant). POST with empty body triggers the same form-definition response.
-        if (loginFormStatusCode == HttpStatusCode.NotFound && parsedLoginForm is null)
-        {
-            var loginFormPostHeaders = CitrixExplicitAuth.CreateBaseHeaders(storeRootUri, explicitLoginUri, httpsHeaderValue, currentCsrfToken, forwardedAcceptLanguage, forwardedUserAgent);
-            loginFormPostHeaders["X-Citrix-AM-CredentialTypes"] = CitrixExplicitAuth.FormCredentialTypes;
-            loginFormPostHeaders["X-Citrix-AM-LabelTypes"] = CitrixExplicitAuth.FormLabelTypes;
-
-            using var loginFormPostRequest = CitrixExplicitAuth.CreateRequest(HttpMethod.Post, explicitLoginUri, loginFormPostHeaders, string.Empty, "application/x-www-form-urlencoded; charset=UTF-8");
-            using var loginFormPostResponse = await client.SendAsync(loginFormPostRequest, cancellationToken);
-            loginFormStatusCode = loginFormPostResponse.StatusCode;
-            var loginFormPostBody = await loginFormPostResponse.Content.ReadAsStringAsync(cancellationToken);
-            loginFormPreview = CitrixExplicitAuth.Preview(loginFormPostBody);
-            parsedLoginForm = CitrixExplicitAuth.TryParseAuthForm(loginFormPostBody);
-            loginAttemptResults.Add($"[loginForm-POST-fallback] {(int)loginFormStatusCode}");
-
-            var refreshedCsrfToken2 = CitrixExplicitAuth.GetCookieValue(handler.CookieContainer, storeRootUri, "CsrfToken");
-            if (!string.IsNullOrWhiteSpace(refreshedCsrfToken2))
-                currentCsrfToken = refreshedCsrfToken2;
-
-            if (loginFormPostResponse.StatusCode == HttpStatusCode.NotFound)
-            {
-                var responseHeaderDump = loginFormPostResponse.Headers
-                    .Concat(loginFormPostResponse.Content.Headers)
-                    .Select(h => $"{h.Key}={string.Join(",", h.Value)}")
-                    .ToArray();
-                loginAttemptResults.Add($"[loginForm-POST-404-headers] {string.Join(" | ", responseHeaderDump)}");
-            }
+            if (loginFormResponse.IsSuccessStatusCode)
+                break;
         }
 
         // Use PostBack URL from form definition if available
@@ -634,11 +601,6 @@ app.MapPost("/api/citrix-diagnostics/explicit-login", async (
             loginRequest.RequestId, loginAttemptUri, usernameField, domainField, !string.IsNullOrWhiteSpace(stateContextValue));
 
         var loginFormBody = await new FormUrlEncodedContent(loginFormPayload).ReadAsStringAsync(cancellationToken);
-
-        // Diagnostic: show which cookies are present before LoginAttempt
-        var originRootUri = new Uri($"{storeRootUri.Scheme}://{storeRootUri.Authority}/");
-        loginAttemptResults.Add($"[pre-login cookies:storeRoot] {string.Join(", ", CitrixExplicitAuth.GetCookieNames(handler.CookieContainer, storeRootUri))}");
-        loginAttemptResults.Add($"[pre-login cookies:originRoot] {string.Join(", ", CitrixExplicitAuth.GetCookieNames(handler.CookieContainer, originRootUri))}");
 
         using (var loginSubmitRequest = CitrixExplicitAuth.CreateRequest(
             HttpMethod.Post,
@@ -710,12 +672,26 @@ app.MapPost("/api/citrix-diagnostics/explicit-login", async (
             resourcesPreview = CitrixExplicitAuth.Preview(resourcesBody);
             var resourcesPayload = CitrixExplicitAuth.TryParseJson(resourcesBody);
 
+            // Cache authenticated session so launch + icon endpoints can reuse cookies without re-login.
+            // Token is opaque to the browser; cookies stay server-side.
+            var sessionToken = sessionCache.Store(new CitrixSessionEntry
+            {
+                Cookies = handler.CookieContainer,
+                StoreRootUri = storeRootUri,
+                CreatedAt = DateTimeOffset.UtcNow
+            });
+
+            logger.LogInformation(
+                "Citrix session cached. RequestId: {RequestId}. SessionToken: {SessionToken}. StoreRootUri: {StoreRootUri}",
+                loginRequest.RequestId, sessionToken, storeRootUri);
+
             return Results.Ok(new CitrixLoginResponse
             {
                 Ok = true,
                 RequestId = loginRequest.RequestId,
                 LoginSucceeded = true,
                 Message = "Citrix explicit login proběhl a server vrátil Resources/List.",
+                SessionToken = sessionToken,
                 AuthResult = authResult ?? string.Empty,
                 LoginErrorText = loginErrorText ?? string.Empty,
                 BootstrapStatusCode = bootstrapStatusCode is null ? null : (int)bootstrapStatusCode.Value,
@@ -795,6 +771,48 @@ app.MapRazorPages()
    .WithStaticAssets();
 
 app.Run();
+
+internal sealed class CitrixSessionEntry
+{
+    public required CookieContainer Cookies { get; init; }
+
+    public required Uri StoreRootUri { get; init; }
+
+    public required DateTimeOffset CreatedAt { get; init; }
+}
+
+internal sealed class CitrixSessionCache(IMemoryCache cache)
+{
+    // StoreFront default session timeout is 20 min idle. SlidingExpiration keeps it alive while user clicks.
+    private static readonly TimeSpan SessionTtl = TimeSpan.FromMinutes(20);
+
+    public string Store(CitrixSessionEntry entry)
+    {
+        var token = Guid.NewGuid().ToString("N");
+        cache.Set(CacheKey(token), entry, new MemoryCacheEntryOptions
+        {
+            SlidingExpiration = SessionTtl
+        });
+        return token;
+    }
+
+    public CitrixSessionEntry? Get(string token) =>
+        string.IsNullOrWhiteSpace(token)
+            ? null
+            : cache.TryGetValue(CacheKey(token), out CitrixSessionEntry? entry)
+                ? entry
+                : null;
+
+    public void Remove(string token)
+    {
+        if (!string.IsNullOrWhiteSpace(token))
+        {
+            cache.Remove(CacheKey(token));
+        }
+    }
+
+    private static string CacheKey(string token) => $"citrix-session:{token}";
+}
 
 internal sealed class CitrixAuthFormDefinition
 {

@@ -10,6 +10,8 @@ public sealed class CitrixLoginResponse
 
     public bool LoginSucceeded { get; init; }
 
+    public string SessionToken { get; init; } = string.Empty;
+
     public string Message { get; init; } = string.Empty;
 
     public string AuthResult { get; init; } = string.Empty;

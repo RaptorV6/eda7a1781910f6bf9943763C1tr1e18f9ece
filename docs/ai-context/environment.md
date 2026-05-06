@@ -1,0 +1,40 @@
+# Environment notes
+
+## Runtime / platform
+
+- **Active app:** ASP.NET Core 10.0 (`net10.0`), nullable + implicit usings on (`PortalComponent.csproj`).
+- **Razor Pages + minimal API endpoints**, single `Program.cs` (top-level statements).
+- **HTTPS redirection + HSTS** on in non-Development environments (`Program.cs::UseHsts`/`UseHttpsRedirection`).
+- **Static assets** served via `MapStaticAssets` (.NET 10 feature) and `WithStaticAssets`.
+
+## Reference (non-active) tooling
+
+- `Citrix/**` is **classic ASP.NET / IIS** material (`Global.asax`, `web.config`, `Views/`, `App_Data/`, `bin/`). Treat as reference; do not assume any IIS or .NET Framework runtime is set up locally.
+
+## Tooling quirks
+
+- `dotnet build` is the only command pre-allowed by `.claude/settings.local.json`. Any other `dotnet` subcommand triggers a permission prompt.
+- The dev container is a Codespaces-like Linux environment (`linux 6.8.0-1044-azure`). The Citrix StoreFront target is **internal** to the corporate network — DNS for `citrixvpx01.fis.acr` will not resolve from a generic Codespace.
+- `bin/` and `obj/` artefacts are currently tracked in git. Build will dirty the working tree. Do not stage these as part of unrelated commits.
+- `.codex` (zero-byte file at the repo root) is a marker — leave it alone.
+
+## Deployment constraints
+
+- Target deployment story is **not yet decided** (IIS, Kestrel, container?). HSTS / HTTPS-redirect choices depend on this.
+- `appsettings.json::CitrixDiagnostics:BaseUrl` is hard-coded to `https://citrixvpx01.fis.acr/Citrix/FISWeb/`. Make it environment-configurable before deploying anywhere else.
+
+## Known differences from defaults
+
+- `HttpClientHandler` is intentionally configured with `AllowAutoRedirect = false` and `UseCookies = true` with a fresh `CookieContainer` per request — this is a load-bearing decision, not a default. See [decisions.md](decisions.md) and [failed-approaches.md](failed-approaches.md).
+- `AutomaticDecompression = DecompressionMethods.All` is enabled so StoreFront's gzipped responses can be inspected as plain text.
+- Body previews are clamped to 1200 chars by `CitrixExplicitAuth.Preview`. Override via `appsettings.json::CitrixDiagnostics:BodyPreviewLimit`.
+
+## Network / DNS
+
+- `citrixvpx01.fis.acr` resolves only on the corporate network. From a dev container without VPN, requests will fail with DNS errors — that is **not** a code bug.
+- StoreFront uses `ASP.NET_SessionId`, `CsrfToken`, and frequently `CtxsAuthId` cookies. Some are HttpOnly; cookie inspection in browsers requires DevTools → Application → Cookies.
+
+## Logging
+
+- Default log level `Information`, `Microsoft.AspNetCore` clamped to `Warning` (`appsettings.json`).
+- Citrix-specific loggers: `CitrixClientDiagnostics`, `CitrixServerProbe`, `CitrixExplicitLogin`. Use these names to grep logs.

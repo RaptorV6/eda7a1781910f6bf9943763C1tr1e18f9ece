@@ -793,6 +793,14 @@
                     renderApplications(resources);
                     setStatus(`Načteno ${resources.length} aplikací přes server-side login.`, 'success');
                     log.info('ExplicitLogin', `Aplikace byly načteny po explicit loginu. Počet: ${resources.length}`);
+                    log.info('ExplicitLogin', `[DIAG] První resource (všechna pole): ${JSON.stringify(resources[0], null, 2)}`);
+                    log.info('ExplicitLogin', `[DIAG] Klíče resource objektu: ${Object.keys(resources[0]).join(', ')}`);
+                    if (resources[0]?.launchurl || resources[0]?.launchurls) {
+                        log.info('ExplicitLogin', `[DIAG] launchurl: ${resources[0].launchurl || JSON.stringify(resources[0].launchurls)}`);
+                    }
+                    if (resources[0]?.clienttypes) {
+                        log.info('ExplicitLogin', `[DIAG] clienttypes: ${JSON.stringify(resources[0].clienttypes)}`);
+                    }
                 } catch (error) {
                     const message = error instanceof Error ? error.message : String(error);
                     setStatus('Server-side Citrix login selhal.', 'error');

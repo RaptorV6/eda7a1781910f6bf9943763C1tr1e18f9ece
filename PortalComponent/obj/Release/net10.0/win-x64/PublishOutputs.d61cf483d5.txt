@@ -1,0 +1,10 @@
+/workspaces/eda7a1781910f6bf9943763C1tr1e18f9ece/publish-local-exe/publish/web.config
+/workspaces/eda7a1781910f6bf9943763C1tr1e18f9ece/publish-local-exe/appsettings.Development.json
+/workspaces/eda7a1781910f6bf9943763C1tr1e18f9ece/publish-local-exe/appsettings.json
+/workspaces/eda7a1781910f6bf9943763C1tr1e18f9ece/publish-local-exe/publish/appsettings.Development.json
+/workspaces/eda7a1781910f6bf9943763C1tr1e18f9ece/publish-local-exe/publish/appsettings.json
+/workspaces/eda7a1781910f6bf9943763C1tr1e18f9ece/publish-local-exe/publish/PortalComponent.deps.json
+/workspaces/eda7a1781910f6bf9943763C1tr1e18f9ece/publish-local-exe/publish/PortalComponent.runtimeconfig.json
+/workspaces/eda7a1781910f6bf9943763C1tr1e18f9ece/publish-local-exe/publish/PortalComponent.staticwebassets.endpoints.json
+/workspaces/eda7a1781910f6bf9943763C1tr1e18f9ece/publish-local-exe/PortalComponent.pdb
+/workspaces/eda7a1781910f6bf9943763C1tr1e18f9ece/publish-local-exe/PortalComponent.exe

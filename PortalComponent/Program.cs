@@ -335,15 +335,15 @@ app.MapGet("/api/citrix-proxy", async (
 
     var contentType = response.Content.Headers.ContentType?.ToString() ?? "application/octet-stream";
 
-    // ICA download: force attachment + application/x-ica so browser triggers download path.
-    // Combined with browser policy AutoOpenFileTypes=ica (deployed via GPO), the file auto-opens
-    // in Citrix Workspace App without download bar visible. Without the policy, user sees download
-    // bar and must click — admin's responsibility to deploy the GPO.
+    // ICA: send only application/x-ica MIME, NO Content-Disposition. Browser then routes via MIME
+    // association → Citrix Workspace App handler launches directly without showing download bar.
+    // This mirrors how official StoreFront delivers ICA on machines with Workspace App installed.
     var isIca = path.Contains("LaunchIca", StringComparison.OrdinalIgnoreCase) || path.EndsWith(".ica", StringComparison.OrdinalIgnoreCase);
     if (isIca)
     {
         contentType = "application/x-ica";
-        httpContext.Response.Headers.ContentDisposition = "attachment; filename=\"citrix-app.ica\"";
+        // Explicitly remove any Content-Disposition that may have been forwarded from upstream.
+        httpContext.Response.Headers.Remove("Content-Disposition");
     }
 
     httpContext.Response.StatusCode = (int)response.StatusCode;

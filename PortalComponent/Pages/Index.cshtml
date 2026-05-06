@@ -22,29 +22,130 @@
         font-weight: 700;
     }
 
-    .citrix-diagnostics-subtitle {
-        color: #52606d;
-        margin-bottom: 0;
+    .citrix-info-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+        gap: 0.75rem;
+        margin-bottom: 1.25rem;
     }
 
-    .citrix-diagnostics-note {
-        margin: 1rem 0;
-        border-radius: 0.75rem;
-        background: #f8fafc;
+    .citrix-info-card {
         border: 1px solid #d9e2ec;
+        background: #f8fafc;
+        border-radius: 0.65rem;
         padding: 0.85rem 1rem;
+    }
+
+    .citrix-info-label {
+        font-size: 0.78rem;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+        color: #52606d;
+        font-weight: 700;
+        margin-bottom: 0.35rem;
+    }
+
+    .citrix-info-value {
+        display: block;
+        font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+        font-size: 0.9rem;
+        color: #102a43;
+        word-break: break-all;
+    }
+
+    .citrix-info-hint {
+        margin-top: 0.4rem;
+        font-size: 0.8rem;
+        color: #627d98;
+    }
+
+    .citrix-info-endpoints {
+        list-style: none;
+        margin: 0;
+        padding: 0;
+        font-size: 0.85rem;
         color: #243b53;
     }
 
-    .citrix-diagnostics-meta {
-        margin-bottom: 1rem;
-        color: #52606d;
+    .citrix-info-endpoints li {
+        margin-bottom: 0.4rem;
+        padding-left: 0.65rem;
+        border-left: 2px solid #cbd5e1;
         word-break: break-word;
+    }
+
+    .citrix-info-endpoints li:last-child {
+        margin-bottom: 0;
+    }
+
+    .citrix-info-howto {
+        margin-bottom: 1.5rem;
+        border: 1px solid #d9e2ec;
+        border-radius: 0.65rem;
+        background: #fffbeb;
+        padding: 0.5rem 1rem;
+    }
+
+    .citrix-info-howto > summary {
+        cursor: pointer;
+        font-weight: 700;
+        color: #78350f;
+        padding: 0.5rem 0;
+        user-select: none;
+    }
+
+    .citrix-howto-body {
+        padding: 0.5rem 0 1rem;
+        font-size: 0.9rem;
+        line-height: 1.55;
+        color: #1f2937;
+    }
+
+    .citrix-howto-body h3 {
+        margin-top: 1.25rem;
+        margin-bottom: 0.5rem;
+        font-size: 1.05rem;
+        color: #0f172a;
+    }
+
+    .citrix-howto-body h3:first-child {
+        margin-top: 0.5rem;
+    }
+
+    .citrix-howto-body ol,
+    .citrix-howto-body ul {
+        margin: 0 0 0.5rem;
+        padding-left: 1.5rem;
+    }
+
+    .citrix-howto-body code {
+        background: #f1f5f9;
+        padding: 0.05rem 0.3rem;
+        border-radius: 0.3rem;
+        font-size: 0.85rem;
     }
 
     .citrix-diagnostics-status {
         font-weight: 700;
-        margin-bottom: 1rem;
+        margin: 0.5rem 0 1rem;
+        min-height: 1.25rem;
+    }
+
+    .citrix-diagnostics-status:empty {
+        display: none;
+    }
+
+    .citrix-diagnostics-details {
+        margin-top: 1.5rem;
+        border-top: 1px solid #d9e2ec;
+        padding-top: 1rem;
+    }
+
+    .citrix-diagnostics-details summary {
+        cursor: pointer;
+        color: #52606d;
+        font-size: 0.9rem;
+        user-select: none;
     }
 
     .citrix-diagnostics-status[data-level="info"] {
@@ -188,17 +289,76 @@
      data-request-id="@Model.DiagnosticRequestId">
     <div class="mb-3">
         <h1 class="citrix-diagnostics-title">@Model.PanelTitle</h1>
-        <p class="citrix-diagnostics-subtitle">Minimalní diagnostický PoC pro ověření StoreFront Web API a načtení aplikací uživatele.</p>
     </div>
 
-    <div class="citrix-diagnostics-note">
-        Nejdřív se přihlaste do StoreFrontu ve stejném browseru a na stejné Citrix URL. Přihlášení jen v nativní Citrix Workspace app nemusí dodat browser cookies pro tento PoC.
+    <div class="citrix-info-grid">
+        <div class="citrix-info-card">
+            <div class="citrix-info-label">Citrix StoreFront (server-side)</div>
+            <code class="citrix-info-value">@configuredBaseUrl</code>
+            <div class="citrix-info-hint">Interní hostname kam portál posílá auth + Resources/List requesty.</div>
+        </div>
+        <div class="citrix-info-card">
+            <div class="citrix-info-label">Public gateway (klient-side ICA)</div>
+            <code class="citrix-info-value">@(string.IsNullOrWhiteSpace(Model.PublicGatewayHost) ? "(nenastaveno)" : Model.PublicGatewayHost)</code>
+            <div class="citrix-info-hint">Hostname kam Citrix Workspace App fetchne ICA přes <code>receiver://</code>. Server-side host je interní → klient by ho neviděl, proto rewrite.</div>
+        </div>
+        <div class="citrix-info-card">
+            <div class="citrix-info-label">Backend endpointy</div>
+            <ul class="citrix-info-endpoints">
+                <li><code>POST @Model.ServerLoginEndpoint</code> — bootstrap → ExplicitForms login → Resources/List</li>
+                <li><code>POST @Model.LaunchStatusEndpoint</code> — GetLaunchStatus + rewrite fileFetchUrl na public host</li>
+                <li><code>GET @Model.ProxyEndpoint</code> — ICA + ikony stream s cached cookies (whitelist <code>Resources/*</code>)</li>
+            </ul>
+        </div>
     </div>
 
-    <div class="citrix-diagnostics-meta">
-        Použitá Citrix URL:
-        <code id="citrix-base-url">@configuredBaseUrl</code>
-    </div>
+    <details class="citrix-info-howto">
+        <summary>Jak to celé funguje (klíčové poznatky pro replikaci)</summary>
+        <div class="citrix-howto-body">
+            <h3>1. Server-side login flow (7 kroků)</h3>
+            <ol>
+                <li><strong>GET</strong> <code>/Citrix/FISWeb/</code> s <strong>page-like headers</strong> (NE <code>X-Requested-With</code>) → 302 na NetScaler</li>
+                <li>Follow redirect chain manuálně (<code>AllowAutoRedirect=false</code>): NetScaler vrátí <code>Location</code> + HTML <code>&lt;meta http-equiv="refresh"&gt;</code> — obojí musíme následovat</li>
+                <li>Land na <code>/Citrix/FISWeb/</code> 200 — StoreFront vytvoří <code>ASP.NET_SessionId</code> + <code>CsrfToken</code> cookies</li>
+                <li><strong>POST</strong> <code>Authentication/GetAuthMethods</code> → seznam auth metod</li>
+                <li><strong>POST</strong> <code>ExplicitAuth/Login</code> (NE GET — IIS na této verzi vrátí 404) → form definition XML</li>
+                <li><strong>POST</strong> <code>ExplicitAuth/LoginAttempt</code> s <code>username, password, domain, loginBtn=Přihlásit</code> → <code>&lt;Result&gt;success&lt;/Result&gt;</code></li>
+                <li><strong>POST</strong> <code>Resources/List</code> s <code>format=json&amp;resourceDetails=Default</code> → JSON s 9 apps</li>
+            </ol>
+
+            <h3>2. CSRF token rotuje</h3>
+            <p>StoreFront vystaví <strong>nový</strong> <code>CsrfToken</code> po každém hopu. Re-read cookies po každém request, použij latest pro <code>Csrf-Token</code> header.</p>
+
+            <h3>3. App launch (silent receiver://)</h3>
+            <ol>
+                <li>Klik dlaždice → JS volá <code>POST /api/citrix-launch-status?session=&lt;GUID&gt;&amp;resourceId=&lt;base64&gt;</code></li>
+                <li>Portál proxy-uje na Citrix <code>Resources/GetLaunchStatus/&lt;id&gt;</code> s body <code>createFileFetchTicket=true</code></li>
+                <li>Citrix vrátí JSON: <code>fileFetchUrl, fileFetchTicket, fileFetchStaTicket, serverProtocolVersion, ttl=30</code></li>
+                <li>Portál <strong>přepíše host</strong> v <code>fileFetchUrl</code> z interního <code>citrixvpx01.fis.acr</code> na public <code>pnagent.fis.acr</code> (bez toho Workspace nemá síťový dosah)</li>
+                <li>JS sestaví: <code>params = "action=launch&amp;serverProtocolVersion=1&amp;transport=https&amp;ticket=&lt;fileFetchTicket&gt;"</code> → base64</li>
+                <li>JS sestaví: <code>receiver://&lt;public-host&gt;/&lt;path&gt;/clientAssistant/getIcaFile/&lt;base64-params&gt;</code></li>
+                <li><code>window.location = receiverUrl</code> → Edge invokuje OS protocol handler → <code>nglauncher.exe</code> (Citrix Secure Access Client) → fetch ICA → HDX session</li>
+            </ol>
+
+            <h3>4. Bezpečnostní model</h3>
+            <ul>
+                <li>Cookies (<code>ASP.NET_SessionId</code>, <code>CsrfToken</code>, <code>NSC_TASS</code>, <code>NSC_AAAC</code>) <strong>NIKDY</strong> v browseru — server-side <code>IMemoryCache</code> pod GUID tokenem</li>
+                <li>Browser drží jen opaque <code>sessionToken</code> GUID (20 min sliding TTL = StoreFront default)</li>
+                <li>Anti-SSRF na <code>/api/citrix-proxy</code>: <code>path</code> musí začínat <code>Resources/</code>, žádné <code>..</code>, žádné <code>://</code>, žádné absolutní URI</li>
+                <li>Heslo se nikam neloguje (jen username + doména pro audit)</li>
+            </ul>
+
+            <h3>5. Klient side prerequisity</h3>
+            <ul>
+                <li><strong>Citrix Workspace App / Secure Access Client</strong> nainstalovaný na klientovi (registruje <code>receiver:</code> URI scheme + <code>application/x-ica</code> MIME handler)</li>
+                <li>Workspace App má <strong>nakonfigurovaný store</strong> (přes "Add Account" UI nebo přes MSI parametry / GPO push)</li>
+                <li><strong>HTTPS dosah</strong> z klienta na public gateway hostname</li>
+            </ul>
+
+            <h3>6. Důkaz strukturální správnosti</h3>
+            <p>Porovnání ICA souboru z našeho portálu s ICA z oficiálního StoreFrontu pro stejnou aplikaci: <code>SessionsharingKey</code> je <strong>bit-identický</strong> (deterministický hash app+server+config). Per-launch tokeny (LogonTicket, STA, ClearPassword) jsou unikátní v každém souboru — což je správně. Portál mluví se stejnou aplikací stejným způsobem jako oficiální Receiver for Web.</p>
+        </div>
+    </details>
 
     <form id="citrix-login-form" class="citrix-login-form">
         <div class="citrix-login-grid">
@@ -216,19 +376,21 @@
             </div>
         </div>
         <div class="citrix-login-actions">
-            <button id="citrix-login-button" class="citrix-login-button" type="submit">Přihlásit přes localhost</button>
-            <span class="citrix-login-hint">Credentials se odešlou jen na náš ASP.NET endpoint, který provede Citrix login na serveru.</span>
+            <button id="citrix-login-button" class="citrix-login-button" type="submit">Přihlásit</button>
         </div>
     </form>
 
-    <div id="citrix-status" class="citrix-diagnostics-status" data-level="info">Načítám Citrix konfiguraci…</div>
+    <div id="citrix-status" class="citrix-diagnostics-status" data-level="info"></div>
 
     <div id="citrix-apps">
         <ul id="citrix-app-list" class="citrix-app-list"></ul>
         <p id="citrix-empty-state" class="citrix-empty-state d-none"></p>
     </div>
 
-    <pre id="citrix-log" class="citrix-diagnostics-log"></pre>
+    <details class="citrix-diagnostics-details">
+        <summary>Diagnostika (rozbalit)</summary>
+        <pre id="citrix-log" class="citrix-diagnostics-log"></pre>
+    </details>
 </div>
 
 @section Scripts {

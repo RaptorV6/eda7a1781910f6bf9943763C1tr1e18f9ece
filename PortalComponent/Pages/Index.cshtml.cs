@@ -24,6 +24,10 @@ public class IndexModel : PageModel
 
     public string CitrixBaseUrl { get; private set; } = string.Empty;
 
+    public string PublicGatewayHost { get; private set; } = string.Empty;
+
+    public string PublicStorePath { get; private set; } = string.Empty;
+
     public string PanelTitle { get; private set; } = DefaultPanelTitle;
 
     public int BodyPreviewLimit { get; private set; } = DefaultBodyPreviewLimit;
@@ -34,6 +38,10 @@ public class IndexModel : PageModel
 
     public string ServerLoginEndpoint { get; private set; } = "/api/citrix-diagnostics/explicit-login";
 
+    public string LaunchStatusEndpoint { get; private set; } = "/api/citrix-launch-status";
+
+    public string ProxyEndpoint { get; private set; } = "/api/citrix-proxy";
+
     public string DiagnosticRequestId { get; private set; } = string.Empty;
 
     public void OnGet()
@@ -41,6 +49,8 @@ public class IndexModel : PageModel
         var diagnosticsSection = _configuration.GetSection("CitrixDiagnostics");
 
         CitrixBaseUrl = diagnosticsSection["BaseUrl"]?.Trim() ?? string.Empty;
+        PublicGatewayHost = diagnosticsSection["PublicGatewayHost"]?.Trim() ?? string.Empty;
+        PublicStorePath = diagnosticsSection["PublicStorePath"]?.Trim() ?? string.Empty;
         PanelTitle = diagnosticsSection["PanelTitle"]?.Trim() ?? DefaultPanelTitle;
         BodyPreviewLimit = diagnosticsSection.GetValue<int?>("BodyPreviewLimit") ?? DefaultBodyPreviewLimit;
         DiagnosticRequestId = Activity.Current?.Id ?? HttpContext.TraceIdentifier;
@@ -48,12 +58,13 @@ public class IndexModel : PageModel
         var hasConfiguredUrl = !string.IsNullOrWhiteSpace(CitrixBaseUrl);
 
         _logger.LogInformation(
-            "Citrix PoC page opened. RequestId: {RequestId}. Path: {Path}. Environment: {Environment}. BaseUrl configured: {HasConfiguredUrl}. BaseUrl: {BaseUrl}. BodyPreviewLimit: {BodyPreviewLimit}",
+            "Citrix PoC page opened. RequestId: {RequestId}. Path: {Path}. Environment: {Environment}. BaseUrl configured: {HasConfiguredUrl}. BaseUrl: {BaseUrl}. PublicGatewayHost: {PublicGatewayHost}. BodyPreviewLimit: {BodyPreviewLimit}",
             DiagnosticRequestId,
             HttpContext?.Request?.Path.Value,
             _hostEnvironment.EnvironmentName,
             hasConfiguredUrl,
             CitrixBaseUrl,
+            PublicGatewayHost,
             BodyPreviewLimit);
     }
 }

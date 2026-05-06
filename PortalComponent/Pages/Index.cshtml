@@ -628,9 +628,17 @@
                     if (launchPath) {
                         listItem.addEventListener('click', () => {
                             log.info('Launch', `Klik na "${resource.name}". Spouštím přes ICA: ${launchPath}`);
-                            // Browser navigates to proxy URL → server returns ICA file with attachment header
-                            // → OS handler (Citrix Workspace App) picks it up.
-                            window.location.href = proxyUrl(launchPath);
+                            // Use hidden iframe instead of window.location.href so browser treats this as
+                            // embedded content (Sec-Fetch-Mode=no-cors) instead of top-level navigation.
+                            // With navigation, browser MUST show download bar for application/x-ica.
+                            // With iframe + registered MIME handler, browser hands off to Citrix Workspace App
+                            // silently — same UX as official StoreFront.
+                            const launcher = document.createElement('iframe');
+                            launcher.style.display = 'none';
+                            launcher.src = proxyUrl(launchPath);
+                            document.body.appendChild(launcher);
+                            // Cleanup after Workspace App has had time to grab the file.
+                            setTimeout(() => { try { launcher.remove(); } catch {} }, 10000);
                         });
                     }
 

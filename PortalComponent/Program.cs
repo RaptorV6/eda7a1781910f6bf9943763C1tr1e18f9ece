@@ -271,9 +271,10 @@ app.MapPost("/api/citrix-diagnostics/server-probe", async (
     }
 });
 
-// Replicates official StoreFront launch flow: POST GetLaunchStatus with createFileFetchTicket=true.
-// Returns the StoreFront JSON to the browser so it can use the file fetch ticket / launch URL with
-// receiver: protocol scheme (silent handoff to Workspace App, no download bar).
+// Returns StoreFront launch status JSON (fileFetchUrl, fileFetchTicket, serverProtocolVersion, ttl).
+// Browser then uses these to construct a receiver:// URL that hands off to Citrix Workspace App
+// (or Citrix Secure Access Client / nglauncher.exe) via OS protocol handler — silent launch, no
+// ICA download visible. Format mirrors the official StoreFront SPA flow.
 app.MapPost("/api/citrix-launch-status", async (
     string session,
     string resourceId,
@@ -295,7 +296,6 @@ app.MapPost("/api/citrix-launch-status", async (
         return Results.StatusCode(StatusCodes.Status401Unauthorized);
     }
 
-    // resourceId is the URL-safe base64 piece from launchurl (e.g. "MjJDb250cm9sbGVyLk1TIEVkZ2U-")
     if (!System.Text.RegularExpressions.Regex.IsMatch(resourceId, "^[A-Za-z0-9_-]+$"))
     {
         return Results.BadRequest(new { error = "Invalid resourceId format." });
@@ -329,8 +329,8 @@ app.MapPost("/api/citrix-launch-status", async (
     var bodyText = await response.Content.ReadAsStringAsync(cancellationToken);
 
     logger.LogInformation(
-        "Citrix launch status. Session: {Session}. ResourceId: {ResourceId}. StatusCode: {StatusCode}. ContentType: {ContentType}. BodyLength: {BodyLength}",
-        session, resourceId, (int)response.StatusCode, response.Content.Headers.ContentType?.ToString(), bodyText.Length);
+        "Citrix launch status. Session: {Session}. ResourceId: {ResourceId}. StatusCode: {StatusCode}",
+        session, resourceId, (int)response.StatusCode);
 
     return Results.Content(bodyText, response.Content.Headers.ContentType?.ToString() ?? "application/json", statusCode: (int)response.StatusCode);
 });

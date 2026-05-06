@@ -629,22 +629,40 @@
                         listItem.addEventListener('click', async () => {
                             log.info('Launch', `Klik na "${resource.name}".`);
 
-                            // Extract resourceId from launchurl: "Resources/LaunchIca/<base64-id>.ica"
+                            // Primary path: receiver:// protocol handoff. Mirrors official StoreFront SPA.
+                            // Constructs receiver:// URL with launch params (action, ticket, version) base64-encoded.
+                            // Browser invokes Citrix Workspace Launcher (nglauncher.exe / Workspace App) directly
+                            // via OS protocol handler — no ICA download, no download bar.
                             const match = launchPath.match(/Resources\/LaunchIca\/([^.\/]+)\.ica$/i);
-                            if (match) {
+                            if (match && sessionToken) {
                                 const resourceId = match[1];
                                 try {
                                     const statusResp = await fetch(
                                         `/api/citrix-launch-status?session=${encodeURIComponent(sessionToken)}&resourceId=${encodeURIComponent(resourceId)}`,
                                         { method: 'POST' });
-                                    const statusText = await statusResp.text();
-                                    log.info('Launch', `[DIAG] GetLaunchStatus response (${statusResp.status}): ${statusText}`);
+                                    if (statusResp.ok) {
+                                        const status = await statusResp.json();
+                                        if (status?.fileFetchUrl && status?.fileFetchTicket) {
+                                            const params = [
+                                                'action=launch',
+                                                `serverProtocolVersion=${status.serverProtocolVersion ?? '1'}`,
+                                                'transport=https',
+                                                `ticket=${status.fileFetchTicket}`
+                                            ].join('&');
+                                            const paramsB64 = btoa(params);
+                                            const receiverUrl = status.fileFetchUrl.replace(/^https?:\/\//, 'receiver://') + '/' + paramsB64;
+                                            log.info('Launch', `Spouštím přes receiver:// (silent handoff): ${receiverUrl.substring(0, 120)}…`);
+                                            window.location.href = receiverUrl;
+                                            return;
+                                        }
+                                    }
+                                    log.warn('Launch', `GetLaunchStatus nedal validní data, fallback na ICA download.`);
                                 } catch (e) {
-                                    log.warn('Launch', `[DIAG] GetLaunchStatus failed: ${e}`);
+                                    log.warn('Launch', `receiver:// path failed (${e}), fallback na ICA download.`);
                                 }
                             }
 
-                            // Fallback: hidden iframe ICA download (current path, requires user "always open" set).
+                            // Fallback: iframe ICA download (visible download bar without browser GPO/setting).
                             const launcher = document.createElement('iframe');
                             launcher.style.display = 'none';
                             launcher.src = proxyUrl(launchPath);

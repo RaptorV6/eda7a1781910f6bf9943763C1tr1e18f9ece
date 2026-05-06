@@ -18,9 +18,9 @@ Last updated: 2026-05-20
 - For `.ica` paths: `Content-Type: application/x-ica` + `Content-Disposition: attachment`
 
 ## Important files
-- `PortalComponent/Program.cs` — auth flow, session cache, proxy endpoint
-- `PortalComponent/Pages/Index.cshtml` — tiles, click handler, proxy URL builder
-- `PortalComponent/Models/CitrixLoginResponse.cs` — added `SessionToken`
+- `Program.cs` — auth flow, session cache, proxy endpoint
+- `Pages/Index.cshtml` — tiles, click handler, proxy URL builder
+- `Models/CitrixLoginResponse.cs` — added `SessionToken`
 - `docs/ai-context/decisions.md` — three new entries (page headers, session cache, proxy endpoint)
 - `docs/ai-context/current-task.md` — full final state + endpoint contracts
 

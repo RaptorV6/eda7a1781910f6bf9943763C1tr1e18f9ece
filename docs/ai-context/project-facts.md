@@ -4,10 +4,10 @@ Durable project-specific facts Claude must remember.
 
 ---
 
-## 2026-05-06 — Two stacks coexist: `PortalComponent/` (.NET 10) is active, `Citrix/` is reference
+## 2026-05-06 — Two stacks coexist: repo root (.NET 10) is active, `Citrix/` is reference
 
 Fact:
-The repo holds **two parallel codebases**: a modern ASP.NET Core 10.0 portal (`PortalComponent/`) and a snapshot of classic ASP.NET StoreFront artefacts (`Citrix/FIS`, `Citrix/FISAuth`, `Citrix/FISWeb`, `Citrix/PNAgent`, `Citrix/Roaming`, `Citrix/Configuration`).
+The repo holds **two parallel codebases**: a modern ASP.NET Core 10.0 portal (repo root) and a snapshot of classic ASP.NET StoreFront artefacts (`Citrix/FIS`, `Citrix/FISAuth`, `Citrix/FISWeb`, `Citrix/PNAgent`, `Citrix/Roaming`, `Citrix/Configuration`).
 
 Why it matters:
 Confusion about which stack is "the project" leads to edits in the wrong tree. The classic ASP.NET tree contains `Global.asax`, `web.config`, `Views/`, `bin/` — it looks active but it isn't.
@@ -16,7 +16,7 @@ Applies to:
 All work on this repo.
 
 Do this:
-- New code goes in `PortalComponent/`.
+- New code goes in repo root.
 - Treat `Citrix/` as **read-only reference** for what the upstream StoreFront server expects (Views, web.config, FISAuth flows). Do not edit unless the user explicitly asks.
 
 Avoid:
@@ -35,8 +35,8 @@ Why it matters:
 - Translating user-facing strings to English without asking breaks the operator workflow.
 
 Applies to:
-- `PortalComponent/Program.cs` (login flow + API responses).
-- `PortalComponent/Pages/*.cshtml`.
+- `Program.cs` (login flow + API responses).
+- `Pages/*.cshtml`.
 - `appsettings.json::CitrixDiagnostics:PanelTitle`.
 
 Do this:
@@ -60,7 +60,7 @@ Why it matters:
 Skipping any hop, or letting `HttpClient` auto-follow, breaks cookie capture or skips the meta-refresh. See [failed-approaches.md](failed-approaches.md).
 
 Applies to:
-`PortalComponent/Program.cs::/api/citrix-diagnostics/explicit-login` and `::/api/citrix-diagnostics/server-probe`.
+`Program.cs::/api/citrix-diagnostics/explicit-login` and `::/api/citrix-diagnostics/server-probe`.
 
 Do this:
 Walk the chain manually with `AllowAutoRedirect = false`, hop limit 5, and the meta-refresh regex.
@@ -99,7 +99,7 @@ Why it matters:
 Stale CSRF token → LoginAttempt rejected.
 
 Applies to:
-`PortalComponent/Program.cs::/api/citrix-diagnostics/explicit-login`.
+`Program.cs::/api/citrix-diagnostics/explicit-login`.
 
 Do this:
 After each hop, re-read the cookie from `handler.CookieContainer.GetCookies(storeRootUri)` and use the latest value as the `Csrf-Token` request header on the next call.
@@ -118,7 +118,7 @@ Why it matters:
 Field IDs and the submit-button value are deployment-specific. Ignoring the form means the LoginAttempt POST uses wrong field names → server returns non-success.
 
 Applies to:
-`PortalComponent/Program.cs::CitrixExplicitAuth.TryParseAuthForm`, `CitrixAuthFormDefinition`.
+`Program.cs::CitrixExplicitAuth.TryParseAuthForm`, `CitrixAuthFormDefinition`.
 
 Do this:
 Use parsed values; fall back to `username`/`password`/`domain`/`loginBtn=Přihlásit` only when parsing fails. The `PostBack` URL from the form, when present, supersedes the hard-coded `ExplicitAuth/LoginAttempt` URL.

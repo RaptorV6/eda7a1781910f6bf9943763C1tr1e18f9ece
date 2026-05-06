@@ -18,6 +18,11 @@ Before asking the user to repeat anything, before making project-specific assump
 8. `docs/ai-context/project-map.md` — where things live
 9. `docs/ai-context/conventions.md` — coding style
 
+Public-facing docs:
+- `README.md` — project overview, architecture, configuration, build, deployment-specific gotchas. Mirrors public repo `MO-FIS-DEV/citrix-poc`.
+- `docs/code-audit.md` — DRY/OOP review + refactor priority for production hardening.
+- `docs/file-map.md` — file-level mapa kde najít co.
+
 If a user reminds you of something ("we already discussed", "I told you", "we tried that"), treat it as a memory-system bug: find or record the lesson immediately. Use the `lesson-capture` skill.
 
 If a session is getting long, before `/compact`, or before ending work: run the `context-maintenance` skill.
@@ -26,14 +31,13 @@ If a session is getting long, before `/compact`, or before ending work: run the 
 
 ## Project at a glance
 
-**Purpose:** POC for diagnosing and proxying Citrix StoreFront / NetScaler explicit-auth login from a modern .NET portal.
+**Purpose:** ASP.NET Core 10 portal that authenticates against Citrix StoreFront server-side, lists user-assigned applications, and launches them silently via `receiver://` protocol handoff to Citrix Workspace App.
 
-**Two stacks coexist on disk:**
+**Layout:** project files at workspace root (no `PortalComponent/` folder, no `Citrix/` legacy reference — both removed). `Program.cs`, `PortalComponent.csproj`, `Models/`, `Pages/`, `Properties/`, `wwwroot/`, `appsettings.json` directly at root.
 
-- `PortalComponent/` — **active**. ASP.NET Core 10.0 Razor Pages + minimal API endpoints. Server-side proxy that performs the StoreFront ExplicitAuth dance (bootstrap → meta-refresh → AuthMethods → Login form parse → LoginAttempt → Resources/List).
-- `Citrix/` — **reference only, do not edit unless asked.** Classic ASP.NET artefacts (Global.asax, web.config, Views, bin) for `FIS`, `FISAuth`, `FISWeb`, `PNAgent`, `Roaming`, `Configuration`. Used as ground-truth for what the StoreFront server expects. Treat as captured legacy material.
-
-**Branch:** `citrix-poc`.
+**Branches:**
+- Local workspace: `citrix-poc` (development).
+- Public mirror repo: `MO-FIS-DEV/citrix-poc` on GitHub. Workspace and public repo content are kept in sync (excluding `CLAUDE.md`, `docs/ai-context/`, `.claude/`, `.vscode/` which are workspace-only).
 
 **Czech-language project:** API error messages, log messages, and the StoreFront submit button (`loginBtn=Přihlásit`) are in Czech. Do not "translate to English" without asking.
 
@@ -44,8 +48,12 @@ If a session is getting long, before `/compact`, or before ending work: run the 
 Verified commands live in [docs/ai-context/commands.md](docs/ai-context/commands.md). Quick reference:
 
 ```bash
-dotnet build PortalComponent/PortalComponent.csproj
-dotnet run --project PortalComponent
+dotnet build
+dotnet run
+
+# Production publish
+rm -rf ./publish
+dotnet publish -c Release -o ./publish
 ```
 
 There is **no test project yet**. Do not invent test commands.
@@ -54,12 +62,15 @@ There is **no test project yet**. Do not invent test commands.
 
 ## Architecture rules (always-on)
 
-- **`PortalComponent/Program.cs` is the only HTTP entrypoint** for new Citrix proxy logic. Three minimal-API endpoints + Razor Pages. Helper code lives in `internal sealed class CitrixAuthFormDefinition` and `internal static class CitrixExplicitAuth` at the bottom of the same file.
-- **`HttpClientHandler` settings are load-bearing:** `AllowAutoRedirect = false`, `UseCookies = true`, fresh `CookieContainer` per request. Do not change to `AllowAutoRedirect = true` — the explicit-auth flow needs to inspect each redirect (HTTP 3xx **and** HTML `<meta http-equiv="refresh">`) to follow NetScaler's bootstrap.
+- **`Program.cs` is the only HTTP entrypoint** for Citrix proxy logic. Five minimal-API endpoints (`client-log`, `server-probe`, `explicit-login`, `launch-status`, `proxy`) + Razor Pages. Helper code lives in `internal sealed class CitrixSessionEntry`, `CitrixSessionCache`, `CitrixAuthFormDefinition`, and `internal static class CitrixExplicitAuth` at the bottom of the same file.
+- **`HttpClientHandler` settings are load-bearing:** `AllowAutoRedirect = false`, `UseCookies = true`, `CookieContainer` shared across the auth flow. Do not change to `AllowAutoRedirect = true` — the explicit-auth flow needs to inspect each redirect (HTTP 3xx **and** HTML `<meta http-equiv="refresh">`) to follow NetScaler's bootstrap.
 - **CSRF cookie (`CsrfToken`) must be propagated** as `Csrf-Token` header on every StoreFront API call after bootstrap. Re-read it after each step — StoreFront rotates it.
 - **`X-Citrix-IsUsingHTTPS`, `X-Citrix-AM-CredentialTypes`, `X-Citrix-AM-LabelTypes` headers are required** for StoreFront API calls. Do not strip them.
 - **Page navigation requests must NOT send `X-Requested-With` / `X-Citrix-IsUsingHTTPS`** — those mark the request as an API call and StoreFront skips creating the ASP.NET session. Use `CitrixExplicitAuth.CreatePageHeaders` for navigation, `CreateBaseHeaders` for API.
 - **`ExplicitAuth/Login` requires POST first, GET as fallback** on this StoreFront — IIS returns 404 on GET. See `docs/ai-context/failed-approaches.md`.
+- **`fileFetchUrl` from `Resources/GetLaunchStatus` must be host-rewritten** from internal StoreFront host to public gateway host (`appsettings.json::CitrixDiagnostics:PublicGatewayHost`) before sending to browser — Workspace App on client cannot reach internal hostname.
+- **Session cache (`CitrixSessionCache`) holds `CookieContainer` server-side** under random GUID. Browser holds opaque token only. 20-min sliding TTL.
+- **Anti-SSRF whitelist on `/api/citrix-proxy`:** `path` must start with `Resources/`, no `..`, no `://`, no leading `/`.
 - **Body previews are truncated to 1200 chars** (`CitrixExplicitAuth.Preview`). Do not raise this without checking `appsettings.json::CitrixDiagnostics:BodyPreviewLimit`.
 
 ---
@@ -67,10 +78,10 @@ There is **no test project yet**. Do not invent test commands.
 ## Safety rules
 
 - Do not commit secrets. `appsettings.json::CitrixDiagnostics:BaseUrl` already contains an internal hostname (`citrixvpx01.fis.acr`) — that's fine, it's an internal target.
-- Do not commit `bin/`, `obj/`, `publish/` content. The repo currently tracks some artefacts; do not add more.
+- Do not commit `bin/`, `obj/`, `publish/` content. `.gitignore` covers these — verify before staging.
 - Never log credentials. The login endpoint takes `Password` — keep it out of logs (current code logs only username + domain — preserve that).
-- Do not delete `Citrix/` legacy material — it's reference, not dead code.
 - HAR files / browser captures from the real StoreFront may contain real session cookies. Treat them as secrets if encountered.
+- The `Citrix/` legacy reference folder was removed (2026-05-06) — was unused legacy material, no production dependency.
 
 ---
 

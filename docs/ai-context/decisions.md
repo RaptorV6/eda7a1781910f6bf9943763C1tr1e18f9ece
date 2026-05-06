@@ -21,7 +21,7 @@ Consequences:
 Every new StoreFront flow added must use `CitrixExplicitAuth.CreatePageHeaders` (for navigation hops) or `CreateBaseHeaders` (for API calls) and respect the hop limit.
 
 Affected files/modules:
-- `PortalComponent/Program.cs` (`/api/citrix-diagnostics/explicit-login`, `/api/citrix-diagnostics/server-probe`)
+- `Program.cs` (`/api/citrix-diagnostics/explicit-login`, `/api/citrix-diagnostics/server-probe`)
 
 ---
 
@@ -43,7 +43,7 @@ Consequences:
 Code must tolerate either method succeeding and parse the same XML form definition shape from the response.
 
 Affected files/modules:
-- `PortalComponent/Program.cs::CitrixExplicitAuth.TryParseAuthForm`
+- `Program.cs::CitrixExplicitAuth.TryParseAuthForm`
 - explicit-login endpoint: login-form fetch loop and authMethods loop.
 
 ---
@@ -59,7 +59,7 @@ Reason:
 Field IDs vary by StoreFront version and customisation. Hard-coding alone fails on customised deployments; parsing alone fails when the form is missing.
 
 Affected files/modules:
-- `PortalComponent/Program.cs::CitrixAuthFormDefinition`, `CitrixExplicitAuth.TryParseAuthForm`
+- `Program.cs::CitrixAuthFormDefinition`, `CitrixExplicitAuth.TryParseAuthForm`
 
 ---
 
@@ -74,8 +74,8 @@ Reason:
 StoreFront returns full HTML pages (often >50 KB). Returning the entire body to the diagnostic UI would bloat the response. 1200 chars is enough for the redirect target / form structure / error message.
 
 Affected files/modules:
-- `PortalComponent/Program.cs`
-- `PortalComponent/Pages/Index.cshtml.cs::BodyPreviewLimit`
+- `Program.cs`
+- `Pages/Index.cshtml.cs::BodyPreviewLimit`
 
 ---
 
@@ -90,8 +90,8 @@ Reason:
 Target StoreFront is a Czech-language deployment; the localised submit button value is required for the form POST to be accepted. Diagnostic UI is consumed by Czech-speaking operators.
 
 Affected files/modules:
-- `PortalComponent/Program.cs`
-- `PortalComponent/appsettings.json::CitrixDiagnostics:PanelTitle`
+- `Program.cs`
+- `appsettings.json::CitrixDiagnostics:PanelTitle`
 
 ---
 
@@ -109,7 +109,7 @@ Confirmed by:
 Cookie diagnostic added to `loginAttemptResults`. After fix, `[pre-login cookies:storeRoot]` includes `ASP.NET_SessionId`. Login succeeds.
 
 Affected files/modules:
-- `PortalComponent/Program.cs::CitrixExplicitAuth.CreatePageHeaders`
+- `Program.cs::CitrixExplicitAuth.CreatePageHeaders`
 - explicit-login endpoint: bootstrap GET, redirect-hop loop, meta-refresh loop
 
 ---
@@ -130,8 +130,8 @@ Alternatives considered:
 - Distributed cache (Redis) → deferred; IMemoryCache fine for single-instance PoC. Production note in `current-task.md`.
 
 Affected files/modules:
-- `PortalComponent/Program.cs::CitrixSessionCache`, `CitrixSessionEntry`
-- `PortalComponent/Models/CitrixLoginResponse.cs::SessionToken`
+- `Program.cs::CitrixSessionCache`, `CitrixSessionEntry`
+- `Models/CitrixLoginResponse.cs::SessionToken`
 
 ---
 
@@ -150,8 +150,8 @@ Reason:
 - One endpoint, one whitelist rule, less attack surface than multiple specific endpoints
 
 Affected files/modules:
-- `PortalComponent/Program.cs::/api/citrix-proxy`
-- `PortalComponent/Pages/Index.cshtml` — `proxyUrl()` helper, click handler navigates to proxy URL
+- `Program.cs::/api/citrix-proxy`
+- `Pages/Index.cshtml` — `proxyUrl()` helper, click handler navigates to proxy URL
 
 ---
 

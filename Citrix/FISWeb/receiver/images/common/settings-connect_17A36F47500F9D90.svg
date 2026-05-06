@@ -1,6 +1,0 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="72" height="49" viewBox="0 0 72 49">
-    <g fill="none" fill-rule="evenodd">
-        <path fill="#67397A" class="theme-highlight-background-color" d="M0 0h72v40H0V0zm21 45h32v4H21v-4z"/>
-        <path fill="#FFF" class="high-contrast-colors background" d="M20.61 19.5a5.895 5.895 0 0 0 5.89 5.89h7.6V29h-7.6c-5.244 0-9.5-4.256-9.5-9.5s4.256-9.5 9.5-9.5h7.6v3.61h-7.6a5.895 5.895 0 0 0-5.89 5.89zm7.79 1.9v-3.8h15.2v3.8H28.4zM45.5 10c5.244 0 9.5 4.256 9.5 9.5S50.744 29 45.5 29h-7.6v-3.61h7.6a5.895 5.895 0 0 0 5.89-5.89 5.895 5.895 0 0 0-5.89-5.89h-7.6V10h7.6z"/>
-    </g>
-</svg>

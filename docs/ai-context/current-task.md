@@ -74,5 +74,5 @@ Browser ──klik─────────→ Portal /api/citrix-proxy?sessio
 - `.gitignore` for `bin/`, `obj/` — currently tracked
 
 ## Commands
-- `cd PortalComponent && rm -rf ./publish && dotnet publish -c Release -o ./publish`
-- `dotnet build PortalComponent/PortalComponent.csproj`
+- `rm -rf ./publish && dotnet publish -c Release -o ./publish`
+- `dotnet build`

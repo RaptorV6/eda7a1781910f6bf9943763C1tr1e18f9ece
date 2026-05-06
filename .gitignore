@@ -1,0 +1,29 @@
+# .NET build output
+bin/
+obj/
+publish/
+*.user
+*.suo
+.vs/
+
+# IDE
+.idea/
+*.swp
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Local config overrides — never commit
+appsettings.*.local.json
+*.local.config
+
+# Logs
+*.log
+logs/
+
+# HAR captures may contain real session cookies — never commit
+*.har
+
+# .NET CLI tools cache (local dev env)
+.dotnet-cli/

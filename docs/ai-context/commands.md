@@ -7,19 +7,19 @@ Verified commands for this project. Do not add commands here unless they have be
 ## Build
 
 ```bash
-dotnet build PortalComponent/PortalComponent.csproj
+dotnet build PortalComponent.csproj
 ```
 
 Result/notes:
 - Verified. Pre-allowed in `.claude/settings.local.json` (`Bash(dotnet build:*)`).
-- Targets `net10.0`. Will produce artefacts under `PortalComponent/bin/` and `PortalComponent/obj/` — these dirty the working tree.
+- Targets `net10.0`. Will produce artefacts under `bin/` and `obj/` — these dirty the working tree.
 
 ---
 
 ## Run (local)
 
 ```bash
-dotnet run --project PortalComponent
+dotnet run
 ```
 
 Result/notes:
@@ -31,14 +31,14 @@ Result/notes:
 
 ## Test
 
-There is **no test project**. Do not run `dotnet test`. To add tests, propose creating `PortalComponent.Tests/` with xUnit (or whatever the user prefers) and add it to `PortalComponent.sln`.
+There is **no test project**. Do not run `dotnet test`. To add tests, propose creating a sibling `PortalComponent.Tests/` directory with xUnit (or whatever the user prefers).
 
 ---
 
 ## Lint / format
 
 ```bash
-dotnet format PortalComponent/PortalComponent.csproj
+dotnet format PortalComponent.csproj
 ```
 
 Result/notes:
@@ -49,18 +49,19 @@ Result/notes:
 ## Publish
 
 ```bash
-dotnet publish PortalComponent/PortalComponent.csproj -c Release -o PortalComponent/publish
+rm -rf ./publish
+dotnet publish -c Release -o ./publish
 ```
 
 Result/notes:
-- **Not yet verified.** A `PortalComponent/publish/` directory exists in the working tree, suggesting this has been done manually before.
+- Verified. Output goes to `publish/` at repo root. Copy that directory to deployment server.
 
 ---
 
 ## Restore
 
 ```bash
-dotnet restore PortalComponent/PortalComponent.csproj
+dotnet restore PortalComponent.csproj
 ```
 
 Result/notes:
@@ -86,4 +87,4 @@ Result/notes:
 ## Caveats
 
 - Anything other than `dotnet build` will trigger a Claude Code permission prompt unless added to `.claude/settings.local.json`.
-- Build artefacts under `PortalComponent/bin/` and `PortalComponent/obj/` are currently tracked in git. Avoid `git add -A` on this repo without reviewing — you will pull build outputs into commits.
+- Build artefacts under `bin/`, `obj/`, `publish/` are excluded by `.gitignore` (added 2026-05-06). If you see them tracked, the gitignore was bypassed somewhere — investigate.

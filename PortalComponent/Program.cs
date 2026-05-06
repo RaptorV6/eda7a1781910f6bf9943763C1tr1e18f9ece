@@ -271,6 +271,84 @@ app.MapPost("/api/citrix-diagnostics/server-probe", async (
     }
 });
 
+// Generic authenticated proxy to StoreFront. Used for ICA download (app launch) and icon fetch.
+// Browser holds opaque session token; cookies stay server-side. Path is constrained to Resources/* to prevent SSRF.
+app.MapGet("/api/citrix-proxy", async (
+    string session,
+    string path,
+    HttpContext httpContext,
+    ILoggerFactory loggerFactory,
+    CitrixSessionCache sessionCache,
+    CancellationToken cancellationToken) =>
+{
+    var logger = loggerFactory.CreateLogger("CitrixProxy");
+
+    if (string.IsNullOrWhiteSpace(session) || string.IsNullOrWhiteSpace(path))
+    {
+        return Results.BadRequest(new { error = "Missing session or path." });
+    }
+
+    // Anti-SSRF: only allow relative paths under Resources/ (icons, launch, status).
+    // Reject absolute URIs, parent traversal, anything outside the auth scope.
+    if (path.StartsWith('/') || path.Contains("..") || path.Contains("://"))
+    {
+        return Results.BadRequest(new { error = "Invalid path." });
+    }
+    if (!path.StartsWith("Resources/", StringComparison.OrdinalIgnoreCase))
+    {
+        return Results.BadRequest(new { error = "Path must start with Resources/." });
+    }
+
+    var entry = sessionCache.Get(session);
+    if (entry is null)
+    {
+        return Results.StatusCode(StatusCodes.Status401Unauthorized);
+    }
+
+    if (!Uri.TryCreate(entry.StoreRootUri, path, out var targetUri))
+    {
+        return Results.BadRequest(new { error = "Path resolves to invalid URI." });
+    }
+
+    using var handler = new HttpClientHandler
+    {
+        AllowAutoRedirect = false,
+        UseCookies = true,
+        CookieContainer = entry.Cookies,
+        AutomaticDecompression = DecompressionMethods.All
+    };
+    using var client = new HttpClient(handler) { Timeout = TimeSpan.FromSeconds(30) };
+
+    var httpsHeaderValue = string.Equals(entry.StoreRootUri.Scheme, Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase) ? "Yes" : "No";
+    var csrfToken = CitrixExplicitAuth.GetCookieValue(entry.Cookies, entry.StoreRootUri, "CsrfToken");
+    var headers = CitrixExplicitAuth.CreateBaseHeaders(
+        entry.StoreRootUri, targetUri, httpsHeaderValue, csrfToken,
+        httpContext.Request.Headers.AcceptLanguage.ToString(),
+        httpContext.Request.Headers.UserAgent.ToString());
+
+    using var request = CitrixExplicitAuth.CreateRequest(HttpMethod.Get, targetUri, headers);
+    using var response = await client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
+
+    logger.LogInformation(
+        "Citrix proxy. Session: {Session}. Path: {Path}. StatusCode: {StatusCode}. ContentType: {ContentType}",
+        session, path, (int)response.StatusCode, response.Content.Headers.ContentType?.ToString());
+
+    var contentType = response.Content.Headers.ContentType?.ToString() ?? "application/octet-stream";
+
+    // ICA download: force attachment so browser hands file to Workspace App registered for application/x-ica.
+    var isIca = path.Contains("LaunchIca", StringComparison.OrdinalIgnoreCase) || path.EndsWith(".ica", StringComparison.OrdinalIgnoreCase);
+    if (isIca)
+    {
+        contentType = "application/x-ica";
+        var fileName = "citrix-app.ica";
+        httpContext.Response.Headers.ContentDisposition = $"attachment; filename=\"{fileName}\"";
+    }
+
+    httpContext.Response.StatusCode = (int)response.StatusCode;
+    var bytes = await response.Content.ReadAsByteArrayAsync(cancellationToken);
+    return Results.File(bytes, contentType);
+});
+
 app.MapPost("/api/citrix-diagnostics/explicit-login", async (
     CitrixLoginRequest loginRequest,
     HttpContext httpContext,

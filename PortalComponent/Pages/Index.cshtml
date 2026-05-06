@@ -594,16 +594,22 @@
                 return configuration;
             };
 
-            const renderApplications = (resources) => {
+            const renderApplications = (resources, sessionToken) => {
                 appListElement.innerHTML = '';
                 emptyStateElement.classList.add('d-none');
                 emptyStateElement.textContent = '';
 
+                const proxyUrl = (relPath) =>
+                    `/api/citrix-proxy?session=${encodeURIComponent(sessionToken)}&path=${encodeURIComponent(relPath)}`;
+
                 for (const resource of resources) {
-                    const iconUrl = resource.iconurl ? joinUrl(normalizedBaseUrl, resource.iconurl) : '';
+                    const iconUrl = resource.iconurl ? proxyUrl(resource.iconurl) : '';
+                    const launchPath = resource.launchurl;
 
                     const listItem = document.createElement('li');
                     listItem.className = 'citrix-app-item';
+                    listItem.style.cursor = launchPath ? 'pointer' : 'default';
+                    listItem.title = launchPath ? `Spustit: ${resource.name}` : '(launchurl chybí)';
 
                     const image = document.createElement('img');
                     image.className = 'citrix-app-icon';
@@ -612,12 +618,21 @@
                     image.referrerPolicy = 'no-referrer';
                     image.src = iconUrl || 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw==';
                     image.addEventListener('error', () => {
-                        log.warn('IconLoad', `Ikona se nepodařila načíst pro aplikaci "${resource.name || '(bez názvu)'}": ${iconUrl || '(prázdná iconurl)'}`);
+                        log.warn('IconLoad', `Ikona se nepodařila načíst pro "${resource.name || '(bez názvu)'}": ${iconUrl || '(prázdná iconurl)'}`);
                     });
 
                     const name = document.createElement('div');
                     name.className = 'citrix-app-name';
                     name.textContent = resource.name || '(bez názvu)';
+
+                    if (launchPath) {
+                        listItem.addEventListener('click', () => {
+                            log.info('Launch', `Klik na "${resource.name}". Spouštím přes ICA: ${launchPath}`);
+                            // Browser navigates to proxy URL → server returns ICA file with attachment header
+                            // → OS handler (Citrix Workspace App) picks it up.
+                            window.location.href = proxyUrl(launchPath);
+                        });
+                    }
 
                     listItem.appendChild(image);
                     listItem.appendChild(name);
@@ -790,17 +805,12 @@
                         return;
                     }
 
-                    renderApplications(resources);
-                    setStatus(`Načteno ${resources.length} aplikací přes server-side login.`, 'success');
-                    log.info('ExplicitLogin', `Aplikace byly načteny po explicit loginu. Počet: ${resources.length}`);
-                    log.info('ExplicitLogin', `[DIAG] První resource (všechna pole): ${JSON.stringify(resources[0], null, 2)}`);
-                    log.info('ExplicitLogin', `[DIAG] Klíče resource objektu: ${Object.keys(resources[0]).join(', ')}`);
-                    if (resources[0]?.launchurl || resources[0]?.launchurls) {
-                        log.info('ExplicitLogin', `[DIAG] launchurl: ${resources[0].launchurl || JSON.stringify(resources[0].launchurls)}`);
+                    if (!payload.sessionToken) {
+                        setStatus('Login OK ale session token chybí — proxy nebude fungovat.', 'warn');
                     }
-                    if (resources[0]?.clienttypes) {
-                        log.info('ExplicitLogin', `[DIAG] clienttypes: ${JSON.stringify(resources[0].clienttypes)}`);
-                    }
+                    renderApplications(resources, payload.sessionToken || '');
+                    setStatus(`Načteno ${resources.length} aplikací. Klik na dlaždici spustí ICA.`, 'success');
+                    log.info('ExplicitLogin', `Aplikace načteny. Počet: ${resources.length}. SessionToken: ${payload.sessionToken ? '(přítomen)' : '(CHYBÍ)'}`);
                 } catch (error) {
                     const message = error instanceof Error ? error.message : String(error);
                     setStatus('Server-side Citrix login selhal.', 'error');

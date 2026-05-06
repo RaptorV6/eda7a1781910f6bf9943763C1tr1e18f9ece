@@ -95,6 +95,66 @@ Affected files/modules:
 
 ---
 
+## 2026-05-20 — Bootstrap navigation uses page-like headers (no X-Requested-With)
+
+Status: accepted
+
+Decision:
+Bootstrap chain (initial GET, redirect hops, meta-refresh hops) uses `CitrixExplicitAuth.CreatePageHeaders` — `Accept: text/html,...`, `Upgrade-Insecure-Requests: 1`, NO `X-Requested-With`, NO `X-Citrix-IsUsingHTTPS`. API calls (GetAuthMethods, ExplicitAuth/Login, LoginAttempt, Resources/List) keep `CreateBaseHeaders` with AJAX markers.
+
+Reason:
+With `X-Requested-With: XMLHttpRequest` on bootstrap navigation, StoreFront treated the request as AJAX and did NOT create the ASP.NET session. Cookies appeared (`CsrfToken`, NSC) but `ASP.NET_SessionId` was missing. Subsequent `ExplicitAuth/Login` returned 404 from IIS and `LoginAttempt` returned `<LogMessage>sessiontimeout</LogMessage>`. Switching bootstrap to browser-style headers makes StoreFront treat it as a real page load and creates the session.
+
+Confirmed by:
+Cookie diagnostic added to `loginAttemptResults`. After fix, `[pre-login cookies:storeRoot]` includes `ASP.NET_SessionId`. Login succeeds.
+
+Affected files/modules:
+- `PortalComponent/Program.cs::CitrixExplicitAuth.CreatePageHeaders`
+- explicit-login endpoint: bootstrap GET, redirect-hop loop, meta-refresh loop
+
+---
+
+## 2026-05-20 — Server-side session cache (IMemoryCache)
+
+Status: accepted
+
+Decision:
+After successful login, store the authenticated `CookieContainer` + `storeRootUri` in `IMemoryCache` keyed by a random GUID (sliding 20-min TTL = StoreFront default). Browser receives only the opaque GUID as `sessionToken` in the login response.
+
+Reason:
+Subsequent operations (icon fetch, ICA download for app launch) need authenticated requests to StoreFront but must not expose cookies to the browser. Cookies (`ASP.NET_SessionId`, `CsrfToken`, `NSC_*`) are bearer tokens — keeping them server-side is the security baseline.
+
+Alternatives considered:
+- Pass cookies to browser → rejected (security: any XSS or token leak compromises Citrix session).
+- Re-login per click → rejected (latency, cred re-prompt, user lockout risk on retries).
+- Distributed cache (Redis) → deferred; IMemoryCache fine for single-instance PoC. Production note in `current-task.md`.
+
+Affected files/modules:
+- `PortalComponent/Program.cs::CitrixSessionCache`, `CitrixSessionEntry`
+- `PortalComponent/Models/CitrixLoginResponse.cs::SessionToken`
+
+---
+
+## 2026-05-20 — Generic authenticated proxy endpoint with path whitelist
+
+Status: accepted
+
+Decision:
+Single endpoint `GET /api/citrix-proxy?session=<GUID>&path=<rel>` handles BOTH icon fetch and ICA download (and any future StoreFront pass-through). Anti-SSRF: `path` MUST start with `Resources/`, MUST NOT start with `/`, MUST NOT contain `..` or `://`. Resolved against cached `storeRootUri`.
+
+For `.ica` paths (path contains `LaunchIca` or ends with `.ica`): forces `Content-Type: application/x-ica` + `Content-Disposition: attachment; filename="citrix-app.ica"` so browsers hand the file to the registered Workspace App MIME handler.
+
+Reason:
+- Icons need auth cookies → can't load directly from browser
+- ICA download is just another authenticated GET with specific Content-Type
+- One endpoint, one whitelist rule, less attack surface than multiple specific endpoints
+
+Affected files/modules:
+- `PortalComponent/Program.cs::/api/citrix-proxy`
+- `PortalComponent/Pages/Index.cshtml` — `proxyUrl()` helper, click handler navigates to proxy URL
+
+---
+
 ## 2026-05-06 — Context Engineering Level 3 architecture adopted
 
 Status: accepted

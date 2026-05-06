@@ -1,46 +1,78 @@
 # Current task
 
-Last updated: 2026-05-06
+Last updated: 2026-05-20
 
 ## Objective
-Citrix StoreFront / NetScaler explicit-auth proxy POC. Server-side .NET 10 endpoints replicate the browser login flow so the portal can drive Citrix without exposing the user to the StoreFront UI.
+Citrix StoreFront / NetScaler explicit-auth proxy POC. Server-side .NET 10 endpoints replicate the browser login flow so the portal can drive Citrix end-to-end: auth → list apps → click → ICA download → Workspace App launch.
 
-## Current status
-POC functional end-to-end on `citrix-poc` branch. `/api/citrix-diagnostics/explicit-login` performs bootstrap → meta-refresh follow → AuthMethods discovery → Login form parse → LoginAttempt → Resources/List against the configured StoreFront. Recent commits are unlabelled progress markers (`9`–`13`); working tree dirty on `Program.cs` plus build artefacts.
+## Current status — PoC FUNCTIONAL END-TO-END
+On `citrix-poc` branch. Verified against real StoreFront `https://citrixvpx01.fis.acr/Citrix/FISWeb/`:
 
-## Files modified (working tree, uncommitted)
-- `PortalComponent/Program.cs` — main proxy logic
-- `PortalComponent/bin/`, `PortalComponent/obj/` — build artefacts (should not be tracked; out of scope for the POC fix)
+- ✅ Server-side login → `loginSucceeded: true`, `result=success`
+- ✅ `Resources/List` → 200, 9 apps returned
+- ✅ Session token (GUID) returned to browser; cookies cached server-side under that token
+- ✅ Tile rendering with click handler
+- ✅ Icon proxy through `/api/citrix-proxy` (icons display)
+- ✅ Click tile → `.ica` file downloads with correct STA + LogonTicket
+- ✅ Confirmed by user: ICA opened on machine with Citrix Workspace App → app launched
+- ✅ Cross-validated ICA against official StoreFront ICA — `SessionsharingKey` bit-identical, all per-launch tokens correctly unique
 
-## Files inspected (key)
-- `PortalComponent/Program.cs` — three minimal-API endpoints + `CitrixExplicitAuth` helpers
-- `PortalComponent/Models/Citrix*.cs` — request/response shapes
-- `PortalComponent/Pages/Index.cshtml.cs` — Razor Pages diagnostic UI host
-- `PortalComponent/appsettings.json` — `CitrixDiagnostics:BaseUrl = https://citrixvpx01.fis.acr/Citrix/FISWeb/`
-- `Citrix/FIS`, `Citrix/FISAuth`, `Citrix/PNAgent` — legacy reference material
+## Architecture (locked-in)
 
-## Commands run
-- `dotnet build PortalComponent/PortalComponent.csproj` — allowed in `.claude/settings.local.json`
+```
+Browser ──POST login─→ Portal ──server-side auth dance─→ StoreFront
+                         │
+                         ├─ IMemoryCache: GUID → CookieContainer + storeRootUri (20 min sliding TTL)
+                         │
+Browser ──klik─────────→ Portal /api/citrix-proxy?session=<GUID>&path=Resources/...
+                         │
+                         └─ Cached cookies → GET StoreFront → proxy bytes back
+                            (icons: pass-through Content-Type;
+                             ICA: Content-Type=application/x-ica + Content-Disposition: attachment)
+```
 
-## Tests / checks
-- No test project exists. UI-driven verification only via the Razor Pages diagnostic page.
+## Endpoints
+- `POST /api/citrix-diagnostics/explicit-login` — auth + Resources/List + session token issuance
+- `GET /api/citrix-proxy?session=<token>&path=<rel>` — generic authenticated proxy. Anti-SSRF: `path` must start with `Resources/`, no `..`, no absolute URI
 
-## Decisions made
-See [decisions.md](decisions.md). Key ones:
-- POST-first, GET-fallback for `ExplicitAuth/Login` (IIS 404 on GET in this deployment).
-- Manual redirect handling (`AllowAutoRedirect = false`) + manual HTML meta-refresh follow.
-- Czech UI strings preserved in API responses and submit button (`loginBtn=Přihlásit`).
+## Security
+- Cookies (auth tokens) NEVER reach browser — server-side only
+- Browser holds only opaque GUID
+- Password never logged (only username + domain logged)
+- Path whitelist on proxy blocks SSRF
 
-## Failed approaches
-See [failed-approaches.md](failed-approaches.md).
+## What worked (final flow that succeeds)
+1. Bootstrap GET `/Citrix/FISWeb/` with **page-like headers** (no `X-Requested-With`, browser Accept) → 302
+2. Follow 302 to `/cgi/setclient?wica` → 200 HTML w/ meta-refresh
+3. Parse meta-refresh → loop GET `/Citrix/FISWeb` → 301 → `/Citrix/FISWeb/` → 200 (StoreFront sets `ASP.NET_SessionId` + `CsrfToken`)
+4. POST `/Authentication/GetAuthMethods` (no Csrf-Token header) → 200
+5. POST `/ExplicitAuth/Login` (GET returns 404 on this IIS, POST works) → form XML
+6. POST `/ExplicitAuth/LoginAttempt` with username/password/domain/`loginBtn=Přihlásit` → `<Result>success</Result>`
+7. POST `/Resources/List` with `format=json&resourceDetails=Default` → 200 JSON
 
-## User corrections / lessons learned
-See [project-facts.md](project-facts.md) and [environment.md](environment.md).
+## Resource fields (from real `Resources/List`)
+```json
+{
+  "id": "22Controller.GINIS PROVOZNI W202",
+  "name": "GINIS CVICNA",
+  "iconurl": "Resources/Icon/<base64>?size=128",
+  "launchurl": "Resources/LaunchIca/<base64>.ica",
+  "clienttypes": ["ica30", "rdp"],   // NO html5 → native Workspace App required
+  "launchstatusurl": "Resources/GetLaunchStatus/<base64>",
+  "cancellaunch": "Resources/CancelLaunch/<base64>",
+  "subscriptionstatus": "subscribed"
+}
+```
 
-## Open questions
-- Should the POC be lifted out of `Program.cs` into a typed `CitrixStoreFrontClient` service before merging? (No decision yet.)
-- Are the build artefacts under `PortalComponent/bin` / `obj` intentionally tracked? (Probably not — `.gitignore` may be missing/weak.)
-- What is the target deployment story? IIS, Kestrel direct, container? Affects HSTS and HTTPS redirection.
+## Open / next steps
+- Production hardening:
+  - Distributed cache (Redis) instead of IMemoryCache for multi-instance
+  - Session token rotation
+  - CSRF protection on portal endpoints
+  - Refactor Citrix logic out of `Program.cs` into typed `CitrixStoreFrontClient`
+- HTML5 fallback: not needed for this StoreFront (`clienttypes` lacks `html5`); native Workspace App required client-side
+- `.gitignore` for `bin/`, `obj/` — currently tracked
 
-## Next step
-Either: (a) refactor `Program.cs` Citrix logic into a typed service for maintainability, or (b) capture more real-world StoreFront responses for additional auth paths (smartcard, RSA token) before refactoring. Confirm with user which.
+## Commands
+- `cd PortalComponent && rm -rf ./publish && dotnet publish -c Release -o ./publish`
+- `dotnet build PortalComponent/PortalComponent.csproj`

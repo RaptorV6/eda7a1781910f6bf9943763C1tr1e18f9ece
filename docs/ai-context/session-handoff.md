@@ -1,32 +1,48 @@
 # Session handoff
 
-Last updated: 2026-05-06
+Last updated: 2026-05-20
 
 ## Summary
-Bootstrap of Level 3 Context Engineering for the Citrix POC repo. Created `CLAUDE.md`, full `docs/ai-context/` memory layer, three project-local skills, two subagents, and reminder-only hooks. No source code changed.
+**PoC funguje end-to-end.** Citrix login → seznam apps → klik dlaždici → ICA download → Workspace App spustí app. Verified by user proti reálnému StoreFrontu `citrixvpx01.fis.acr`. ICA bit-for-bit srovnán s oficiálním StoreFront ICA (`SessionsharingKey` identický → důkaz mluvíme se stejnou app).
 
 ## Current state
-- Context architecture in place under `docs/ai-context/`, `.claude/skills/`, `.claude/agents/`, `.claude/hooks/`.
-- `Program.cs` and build artefacts remain dirty in the working tree from prior unrelated work — not touched by this session.
-- Branch `citrix-poc` still ahead of `main` with commits `9`–`13`.
+- `citrix-poc` branch, working tree dirty (Program.cs, Index.cshtml, CitrixLoginResponse.cs, build artefacts)
+- New: session cache (`IMemoryCache` keyed by GUID, 20-min sliding TTL)
+- New: `/api/citrix-proxy` endpoint — handles icon fetch AND ICA download with path whitelist
+- New: tile click handler navigates browser to proxy URL → Citrix returns ICA → Workspace App launches
+
+## Architecture (final, see decisions.md)
+- Cookies live server-side in IMemoryCache; browser holds opaque GUID only
+- Bootstrap chain uses page-like headers (no `X-Requested-With`); API calls keep AJAX headers
+- Single proxy endpoint, anti-SSRF whitelist (`path` MUST start with `Resources/`)
+- For `.ica` paths: `Content-Type: application/x-ica` + `Content-Disposition: attachment`
 
 ## Important files
-- `CLAUDE.md` — always-loaded router; memory-first rule.
-- `docs/ai-context/project-facts.md` — Citrix/StoreFront quirks (CSRF rotation, page-vs-API headers, meta-refresh).
-- `docs/ai-context/failed-approaches.md` — POST-first-then-GET, manual redirect-follow, etc.
-- `docs/ai-context/commands.md` — `dotnet build` verified; nothing else.
-- `.claude/settings.json` — reminder-only hooks.
+- `PortalComponent/Program.cs` — auth flow, session cache, proxy endpoint
+- `PortalComponent/Pages/Index.cshtml` — tiles, click handler, proxy URL builder
+- `PortalComponent/Models/CitrixLoginResponse.cs` — added `SessionToken`
+- `docs/ai-context/decisions.md` — three new entries (page headers, session cache, proxy endpoint)
+- `docs/ai-context/current-task.md` — full final state + endpoint contracts
 
-## Important decisions
-See [decisions.md](decisions.md).
+## Verified flow (in user's live test)
+1. `/api/citrix-diagnostics/explicit-login` → `loginSucceeded: true`, `sessionToken: "1798d951..."`
+2. Resources/List → 9 apps. Sample resource fields: `id`, `name`, `iconurl`, `launchurl`, `clienttypes: ["ica30","rdp"]`, `launchstatusurl`, `cancellaunch`, `subscriptionstatus: "subscribed"`
+3. Klik na tile "RDP" → browser navigates `/api/citrix-proxy?session=...&path=Resources/LaunchIca/MjJDb250cm9sbGVyLlcyMl9SRFA-.ica`
+4. Browser stáhl `citrix-app.ica` — bit-for-bit ekvivalent oficiálního StoreFront ICA (modulo per-launch tokens)
+5. Na PC s Workspace App → ICA spustila aplikaci. Confirmed by user.
 
-## Important failures / avoid repeating
-See [failed-approaches.md](failed-approaches.md). Headline: do not enable `AllowAutoRedirect`, do not strip Citrix headers, do not GET `ExplicitAuth/Login` first.
+## Critical findings
+- `clienttypes: ["ica30", "rdp"]` — **NO html5**. HTML5 receiver disabled na tomto StoreFrontu. Native Workspace App required client-side. Žádný HTML5 fallback nelze.
+- ICA tickets (STA, LogonTicket) expirují za ~30-100 sekund. Re-login + okamžitý klik při testování.
 
-## Current blockers
-None for the context architecture.
+## Blockers / next steps
+- None for PoC scope. Finish line dosažen.
+- Production hardening (queue, ne urgent):
+  - Refactor Citrix logic z `Program.cs` do typed `CitrixStoreFrontClient` service
+  - Distributed cache (Redis) místo IMemoryCache
+  - CSRF protection na portal endpointech
+  - Session token rotation
+  - `.gitignore` for `bin/`, `obj/` (currently tracked artefacts pollute commits)
 
-For the Citrix POC itself: no automated tests; relies on a reachable StoreFront at `citrixvpx01.fis.acr`.
-
-## Next action
-For the next Claude session: read `CLAUDE.md`, then `docs/ai-context/current-task.md`, then ask the user whether to proceed with refactoring `Program.cs` into a typed `CitrixStoreFrontClient` service, or capture more StoreFront responses first.
+## For next Claude session
+Read CLAUDE.md → current-task.md. PoC core is **complete**. Ask user whether to proceed with production hardening or extend to additional auth methods (smartcard, RSA token).

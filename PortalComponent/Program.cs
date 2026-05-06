@@ -335,13 +335,15 @@ app.MapGet("/api/citrix-proxy", async (
 
     var contentType = response.Content.Headers.ContentType?.ToString() ?? "application/octet-stream";
 
-    // ICA download: force attachment so browser hands file to Workspace App registered for application/x-ica.
+    // ICA download: set application/x-ica MIME so browser hands file to registered Workspace App handler.
+    // Use inline (NOT attachment) so browser shows "Open with Citrix Workspace?" prompt instead of forcing
+    // a save-and-manual-click. After user checks "Always open this file type" once, future launches are seamless.
+    // Filename hint preserved for browsers that fall back to download.
     var isIca = path.Contains("LaunchIca", StringComparison.OrdinalIgnoreCase) || path.EndsWith(".ica", StringComparison.OrdinalIgnoreCase);
     if (isIca)
     {
         contentType = "application/x-ica";
-        var fileName = "citrix-app.ica";
-        httpContext.Response.Headers.ContentDisposition = $"attachment; filename=\"{fileName}\"";
+        httpContext.Response.Headers.ContentDisposition = "inline; filename=\"citrix-app.ica\"";
     }
 
     httpContext.Response.StatusCode = (int)response.StatusCode;

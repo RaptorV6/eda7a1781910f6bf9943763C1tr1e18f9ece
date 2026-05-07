@@ -963,7 +963,9 @@ app.MapGet("/api/whoami", (HttpContext ctx) => Results.Ok(new
 {
     authenticated = ctx.User.Identity?.IsAuthenticated ?? false,
     name = ctx.User.Identity?.Name ?? "anonymous",
-    authType = ctx.User.Identity?.AuthenticationType ?? "none"
+    authType = ctx.User.Identity?.AuthenticationType ?? "none",
+    isKerberos = ctx.User.Identity?.AuthenticationType == "Kerberos",
+    impersonationLevel = ctx.User.Identity is WindowsIdentity wi ? wi.ImpersonationLevel.ToString() : "n/a"
 }));
 
 app.MapGet("/api/citrix-sso/test", async (HttpContext ctx, IConfiguration config, ILoggerFactory loggerFactory) =>

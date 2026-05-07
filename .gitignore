@@ -27,3 +27,4 @@ logs/
 
 # .NET CLI tools cache (local dev env)
 .dotnet-cli/
+*.sln

@@ -980,55 +980,64 @@ app.MapGet("/api/citrix-sso/test", async (HttpContext ctx, IConfiguration config
     string authMethodsResult;
     try
     {
+        // Bootstrap bez credentials (aby NetScaler nevyrušil session creation)
+        var sharedCookies = new CookieContainer();
+        if (!Uri.TryCreate(storeRootUrl, UriKind.Absolute, out var storeUri))
+            return Results.Ok(new { ssoResult = "FAIL", reason = "Chybí nebo neplatná CitrixDiagnostics:BaseUrl." });
+
+        using var bootstrapHandler = new HttpClientHandler
+        {
+            AllowAutoRedirect = false,
+            UseCookies = true,
+            CookieContainer = sharedCookies,
+            AutomaticDecompression = DecompressionMethods.All
+        };
+        using var bootstrapClient = new HttpClient(bootstrapHandler) { Timeout = TimeSpan.FromSeconds(15) };
+
+        var currentUrl = storeUri;
+        for (int hop = 0; hop < 8; hop++)
+        {
+            using var req = new HttpRequestMessage(HttpMethod.Get, currentUrl);
+            req.Headers.Add("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8");
+            req.Headers.Add("Upgrade-Insecure-Requests", "1");
+            req.Headers.Add("User-Agent", "Mozilla/5.0");
+            using var resp = await bootstrapClient.SendAsync(req);
+
+            if (resp.StatusCode is System.Net.HttpStatusCode.Moved or System.Net.HttpStatusCode.Found or System.Net.HttpStatusCode.SeeOther)
+            {
+                currentUrl = resp.Headers.Location?.IsAbsoluteUri == true
+                    ? resp.Headers.Location
+                    : new Uri(storeUri, resp.Headers.Location);
+                continue;
+            }
+
+            var body = await resp.Content.ReadAsStringAsync();
+            var metaMatch = System.Text.RegularExpressions.Regex.Match(body, @"content=""\d+;\s*url=([^""]+)""", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+            if (metaMatch.Success)
+            {
+                var metaUrl = metaMatch.Groups[1].Value;
+                currentUrl = Uri.TryCreate(metaUrl, UriKind.Absolute, out var absUri) ? absUri : new Uri(storeUri, metaUrl);
+                continue;
+            }
+            break;
+        }
+
+        var bootstrapCookies = sharedCookies.GetCookies(storeUri);
+        var csrf = bootstrapCookies.Cast<Cookie>().FirstOrDefault(c => c.Name.Equals("CsrfToken", StringComparison.OrdinalIgnoreCase))?.Value ?? "";
+
+        // DomainPassthrough s credentials (impersonace uživatele)
         authMethodsResult = await WindowsIdentity.RunImpersonatedAsync(windowsIdentity.AccessToken, async () =>
         {
-            using var handler = new HttpClientHandler
+            using var authHandler = new HttpClientHandler
             {
                 UseDefaultCredentials = true,
                 AllowAutoRedirect = false,
                 UseCookies = true,
-                CookieContainer = new CookieContainer(),
+                CookieContainer = sharedCookies,
                 AutomaticDecompression = DecompressionMethods.All
             };
-            using var client = new HttpClient(handler) { Timeout = TimeSpan.FromSeconds(15) };
+            using var authClient = new HttpClient(authHandler) { Timeout = TimeSpan.FromSeconds(15) };
 
-            if (!Uri.TryCreate(storeRootUrl, UriKind.Absolute, out var storeUri))
-                return "Chybí nebo neplatná CitrixDiagnostics:BaseUrl v appsettings.json";
-
-            // Bootstrap: GET storeRoot → sleduj přesměrování dokud nedostaneme ASP.NET_SessionId
-            var currentUrl = storeUri;
-            for (int hop = 0; hop < 8; hop++)
-            {
-                using var req = new HttpRequestMessage(HttpMethod.Get, currentUrl);
-                req.Headers.Add("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8");
-                req.Headers.Add("User-Agent", "Mozilla/5.0");
-                using var resp = await client.SendAsync(req);
-
-                if (resp.StatusCode is System.Net.HttpStatusCode.Moved or System.Net.HttpStatusCode.Found or System.Net.HttpStatusCode.SeeOther)
-                {
-                    currentUrl = resp.Headers.Location?.IsAbsoluteUri == true
-                        ? resp.Headers.Location
-                        : new Uri(storeUri, resp.Headers.Location);
-                    continue;
-                }
-
-                // meta-refresh?
-                var body = await resp.Content.ReadAsStringAsync();
-                var metaMatch = System.Text.RegularExpressions.Regex.Match(body, @"content=""\d+;\s*url=([^""]+)""", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
-                if (metaMatch.Success)
-                {
-                    var metaUrl = metaMatch.Groups[1].Value;
-                    currentUrl = Uri.TryCreate(metaUrl, UriKind.Absolute, out var absUri) ? absUri : new Uri(storeUri, metaUrl);
-                    continue;
-                }
-
-                break;
-            }
-
-            var cookies = handler.CookieContainer.GetCookies(storeUri);
-            var csrf = cookies.Cast<Cookie>().FirstOrDefault(c => c.Name.Equals("CsrfToken", StringComparison.OrdinalIgnoreCase))?.Value ?? "";
-
-            // Zkus Domain Pass-through login (POST — GET vrací 404 jako ExplicitAuth/Login)
             using var dptReq = new HttpRequestMessage(HttpMethod.Post, new Uri(storeUri, "DomainPassthroughAuth/Login"));
             dptReq.Headers.Add("Accept", "application/xml, text/xml, */*");
             dptReq.Headers.Add("X-Requested-With", "XMLHttpRequest");
@@ -1037,7 +1046,7 @@ app.MapGet("/api/citrix-sso/test", async (HttpContext ctx, IConfiguration config
             dptReq.Headers.Add("Referer", storeUri.ToString());
             dptReq.Content = new StringContent("", Encoding.UTF8, "application/x-www-form-urlencoded");
 
-            using var dptResp = await client.SendAsync(dptReq);
+            using var dptResp = await authClient.SendAsync(dptReq);
             var dptBody = await dptResp.Content.ReadAsStringAsync();
             var dptPreview = dptBody.Length > 800 ? dptBody[..800] + "..." : dptBody;
             var wwwAuth = dptResp.Headers.WwwAuthenticate.ToString();

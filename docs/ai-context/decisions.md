@@ -174,3 +174,42 @@ All future durable lessons must be captured via the `lesson-capture` skill into 
 
 Affected files/modules:
 - `CLAUDE.md`, `docs/ai-context/`, `.claude/skills/`, `.claude/agents/`, `.claude/settings.json`, `.claude/hooks/`
+
+---
+
+## 2026-05-07 — No .sln file in repo root
+
+Status: accepted
+
+Decision:
+Do not commit `.sln` to the repo root. Use `CitrixComponent.csproj` standalone. `.sln` may exist locally for VS IDE use but must not be git-tracked.
+
+Reason:
+When both a `.csproj` and `.sln` are present in the root, `dotnet publish` (and `dotnet build` without explicit target) fails with `MSB1011: Specify which project or solution file to use`. The `.sln` provides no value over the `.csproj` for this single-project repo.
+
+Alternatives considered:
+- Keep `.sln`, always specify `CitrixComponent.csproj` explicitly in commands — rejected, user expects bare `dotnet publish` to work.
+
+Consequences:
+All dotnet commands (`build`, `run`, `publish`) work bare without specifying the project file. If VS IDE needs a `.sln`, add it to `.gitignore`.
+
+Affected files/modules:
+- `CitrixComponent.csproj` (sole project file at root)
+- `docs/ai-context/commands.md`
+
+---
+
+## 2026-05-07 — Project renamed CitrixComponent
+
+Status: accepted
+
+Decision:
+Project name changed from `PortalComponent` to `CitrixComponent` across all files (.csproj, namespaces, docs, both repos).
+
+Reason:
+`PortalComponent` implied tight coupling to a specific host portal. The component is a reusable Citrix StoreFront integration, usable in any host application.
+
+Affected files/modules:
+- `CitrixComponent.csproj` (renamed)
+- All `namespace PortalComponent.*` → `namespace CitrixComponent.*`
+- Public repo `MO-FIS-DEV/citrix-poc` synced

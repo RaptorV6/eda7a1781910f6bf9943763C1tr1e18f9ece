@@ -1,6 +1,6 @@
 # Current task
 
-Last updated: 2026-05-20
+Last updated: 2026-05-07
 
 ## Objective
 Citrix StoreFront / NetScaler explicit-auth proxy POC. Server-side .NET 10 endpoints replicate the browser login flow so the portal can drive Citrix end-to-end: auth → list apps → click → ICA download → Workspace App launch.
@@ -64,14 +64,21 @@ Browser ──klik─────────→ Portal /api/citrix-proxy?sessio
 }
 ```
 
+## Completed this session (2026-05-07)
+
+- ✅ Renamed project `PortalComponent` → `CitrixComponent` (.csproj, all namespaces, docs)
+- ✅ Both repos synced: private (`RaptorV6/eda7a1781910f6bf9943763C1tr1e18f9ece`) + public (`MO-FIS-DEV/citrix-poc`)
+- ✅ `.sln` removed from repo root (caused `MSB1011` ambiguity on `dotnet publish`)
+- ✅ `dotnet build CitrixComponent.csproj` → clean
+
 ## Open / next steps
+- AD SSO implementation (variant B — Kerberos Constrained Delegation) — see session-handoff.md for prerequisites
 - Production hardening:
   - Distributed cache (Redis) instead of IMemoryCache for multi-instance
   - Session token rotation
   - CSRF protection on portal endpoints
   - Refactor Citrix logic out of `Program.cs` into typed `CitrixStoreFrontClient`
-- HTML5 fallback: not needed for this StoreFront (`clienttypes` lacks `html5`); native Workspace App required client-side
-- `.gitignore` for `bin/`, `obj/` — currently tracked
+- HTML5 fallback: not needed for this StoreFront (`clienttypes` lacks `html5`)
 
 ## Commands
 - `rm -rf ./publish && dotnet publish -c Release -o ./publish`

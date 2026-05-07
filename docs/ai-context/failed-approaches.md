@@ -135,3 +135,19 @@ Skip `Content-Length` and `Host` in the forwarding loop (already done in `Progra
 
 Do not repeat:
 "Forward every header for fidelity" — these two are off-limits.
+
+---
+
+## 2026-05-07 — Committing .sln alongside .csproj in repo root
+
+Context:
+During rename from PortalComponent → CitrixComponent, the untracked `.sln` file was accidentally staged and committed alongside `CitrixComponent.csproj`.
+
+What broke:
+`dotnet publish` (bare, no project argument) failed with `MSBUILD : error MSB1011: Specify which project or solution file to use because this folder contains more than one project or solution file.`
+
+Fix applied:
+`git rm eda7a1781910f6bf9943763C1tr1e18f9ece.sln` — removed from repo. `dotnet publish` works bare again.
+
+Do not repeat:
+Do not `git add` `.sln` files in this repo. If a `.sln` exists locally for IDE use, add it to `.gitignore`.

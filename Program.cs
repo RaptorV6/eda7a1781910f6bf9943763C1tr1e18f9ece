@@ -994,12 +994,15 @@ app.MapGet("/api/citrix-sso/test", async (HttpContext ctx, IConfiguration config
         };
         using var bootstrapClient = new HttpClient(bootstrapHandler) { Timeout = TimeSpan.FromSeconds(15) };
 
+        var bootstrapLog = new List<string>();
         var currentUrl = storeUri;
         for (int hop = 0; hop < 8; hop++)
         {
             using var req = CitrixExplicitAuth.CreateRequest(HttpMethod.Get, currentUrl,
                 CitrixExplicitAuth.CreatePageHeaders(storeUri));
             using var resp = await bootstrapClient.SendAsync(req);
+            var hopCookies = string.Join(",", sharedCookies.GetCookies(storeUri).Cast<Cookie>().Select(c => c.Name));
+            bootstrapLog.Add($"hop{hop}: {(int)resp.StatusCode} {currentUrl.PathAndQuery} cookies=[{hopCookies}]");
 
             if (resp.StatusCode is System.Net.HttpStatusCode.Moved or System.Net.HttpStatusCode.Found or System.Net.HttpStatusCode.SeeOther)
             {
@@ -1050,7 +1053,7 @@ app.MapGet("/api/citrix-sso/test", async (HttpContext ctx, IConfiguration config
             var dptBody = await dptResp.Content.ReadAsStringAsync();
             var dptPreview = dptBody.Length > 800 ? dptBody[..800] + "..." : dptBody;
             var wwwAuth = dptResp.Headers.WwwAuthenticate.ToString();
-            return $"DomainPassthroughAuth/Login → {(int)dptResp.StatusCode} | csrf={!string.IsNullOrEmpty(csrf)} | cookies=[{cookieNames}] | WWW-Auth: {wwwAuth} | Body: {dptPreview}";
+            return $"bootstrap=[{string.Join(" | ", bootstrapLog)}] || DomainPassthroughAuth/Login → {(int)dptResp.StatusCode} | csrf={!string.IsNullOrEmpty(csrf)} | cookies=[{cookieNames}] | WWW-Auth: {wwwAuth} | Body: {dptPreview}";
         });
     }
     catch (Exception ex)

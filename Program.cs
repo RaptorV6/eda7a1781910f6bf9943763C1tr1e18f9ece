@@ -972,50 +972,86 @@ app.MapGet("/api/citrix-sso/test", async (HttpContext ctx, IConfiguration config
     var storeRootUrl = config["CitrixDiagnostics:BaseUrl"] ?? "";
 
     if (ctx.User.Identity is not WindowsIdentity windowsIdentity || !windowsIdentity.IsAuthenticated)
-    {
-        return Results.Ok(new { ssoResult = "FAIL", reason = "Windows identita není dostupná — IIS Windows Auth nefunguje nebo app pool nemá správný účet." });
-    }
+        return Results.Ok(new { ssoResult = "FAIL", reason = "Windows identita není dostupná." });
 
     var userName = windowsIdentity.Name;
-    logger.LogInformation("CitrixSsoTest: user={User}, storeRoot={StoreRoot}", userName, storeRootUrl);
+    logger.LogInformation("CitrixSsoTest: user={User}", userName);
 
-    string storeFrontResult;
+    string authMethodsResult;
     try
     {
-        storeFrontResult = await WindowsIdentity.RunImpersonatedAsync(windowsIdentity.AccessToken, async () =>
+        authMethodsResult = await WindowsIdentity.RunImpersonatedAsync(windowsIdentity.AccessToken, async () =>
         {
             using var handler = new HttpClientHandler
             {
                 UseDefaultCredentials = true,
                 AllowAutoRedirect = false,
+                UseCookies = true,
+                CookieContainer = new CookieContainer(),
                 AutomaticDecompression = DecompressionMethods.All
             };
-            using var client = new HttpClient(handler) { Timeout = TimeSpan.FromSeconds(10) };
-            try
+            using var client = new HttpClient(handler) { Timeout = TimeSpan.FromSeconds(15) };
+
+            if (!Uri.TryCreate(storeRootUrl, UriKind.Absolute, out var storeUri))
+                return "Chybí nebo neplatná CitrixDiagnostics:BaseUrl v appsettings.json";
+
+            // Bootstrap: GET storeRoot → sleduj přesměrování dokud nedostaneme ASP.NET_SessionId
+            var currentUrl = storeUri;
+            for (int hop = 0; hop < 8; hop++)
             {
-                var resp = await client.GetAsync(storeRootUrl);
+                using var req = new HttpRequestMessage(HttpMethod.Get, currentUrl);
+                req.Headers.Add("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8");
+                req.Headers.Add("User-Agent", "Mozilla/5.0");
+                using var resp = await client.SendAsync(req);
+
+                if (resp.StatusCode is System.Net.HttpStatusCode.Moved or System.Net.HttpStatusCode.Found or System.Net.HttpStatusCode.SeeOther)
+                {
+                    currentUrl = resp.Headers.Location?.IsAbsoluteUri == true
+                        ? resp.Headers.Location
+                        : new Uri(storeUri, resp.Headers.Location);
+                    continue;
+                }
+
+                // meta-refresh?
                 var body = await resp.Content.ReadAsStringAsync();
-                var preview = body.Length > 300 ? body[..300] + "..." : body;
-                var location = resp.Headers.Location?.ToString() ?? "(žádný Location header)";
-                var wwwAuth = resp.Headers.WwwAuthenticate.ToString();
-                return $"{(int)resp.StatusCode} | Location: {location} | WWW-Authenticate: {wwwAuth} | Body: {preview}";
+                var metaMatch = System.Text.RegularExpressions.Regex.Match(body, @"content=""\d+;\s*url=([^""]+)""", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+                if (metaMatch.Success)
+                {
+                    var metaUrl = metaMatch.Groups[1].Value;
+                    currentUrl = Uri.TryCreate(metaUrl, UriKind.Absolute, out var absUri) ? absUri : new Uri(storeUri, metaUrl);
+                    continue;
+                }
+
+                break;
             }
-            catch (Exception ex)
-            {
-                return $"HttpClient error: {ex.Message}";
-            }
+
+            // Zjistíme dostupné auth metody
+            var cookies = handler.CookieContainer.GetCookies(storeUri);
+            var csrf = cookies.Cast<Cookie>().FirstOrDefault(c => c.Name.Equals("CsrfToken", StringComparison.OrdinalIgnoreCase))?.Value ?? "";
+
+            using var authReq = new HttpRequestMessage(HttpMethod.Post, new Uri(storeUri, "Authentication/GetAuthMethods"));
+            authReq.Headers.Add("Accept", "application/xml, text/xml, */*");
+            authReq.Headers.Add("X-Requested-With", "XMLHttpRequest");
+            authReq.Headers.Add("X-Citrix-IsUsingHTTPS", storeUri.Scheme == "https" ? "Yes" : "No");
+            if (!string.IsNullOrEmpty(csrf)) authReq.Headers.Add("Csrf-Token", csrf);
+            authReq.Headers.Add("Referer", storeUri.ToString());
+            authReq.Content = new StringContent("", Encoding.UTF8, "application/x-www-form-urlencoded");
+
+            using var authResp = await client.SendAsync(authReq);
+            var authBody = await authResp.Content.ReadAsStringAsync();
+            var preview = authBody.Length > 800 ? authBody[..800] + "..." : authBody;
+            return $"GetAuthMethods → {(int)authResp.StatusCode} | csrf={!string.IsNullOrEmpty(csrf)} | Body: {preview}";
         });
     }
     catch (Exception ex)
     {
-        storeFrontResult = $"Impersonation error: {ex.Message}";
+        authMethodsResult = $"Chyba: {ex.Message}";
     }
 
     return Results.Ok(new
     {
-        ssoResult = "tested",
         windowsUser = userName,
-        storeFrontResponse = storeFrontResult
+        authMethodsResult
     });
 });
 

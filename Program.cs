@@ -976,8 +976,31 @@ app.MapGet("/api/citrix-sso/test", async (HttpContext ctx, IConfiguration config
     if (ctx.User.Identity is not WindowsIdentity windowsIdentity || !windowsIdentity.IsAuthenticated)
         return Results.Ok(new { ssoResult = "FAIL", reason = "Windows identita není dostupná." });
 
-    var userName = windowsIdentity.Name;
+    var userName = windowsIdentity.Name; // např. FIS\svobodama nebo ACR\VanD
     logger.LogInformation("CitrixSsoTest: user={User}", userName);
+
+    // S4U2Self — vytvoř Kerberos token ze jména bez hesla
+    WindowsIdentity s4uIdentity;
+    try
+    {
+        // Převod DOMAIN\user → user@domain.fqdn
+        var domainMap = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["FIS"] = "fis.acr",
+            ["ACR"] = "acr"
+        };
+        var parts = userName.Split('\\');
+        var netbios = parts.Length == 2 ? parts[0] : "";
+        var user = parts.Length == 2 ? parts[1] : userName;
+        var fqdn = domainMap.TryGetValue(netbios, out var d) ? d : $"{netbios.ToLower()}.acr";
+        var upn = $"{user}@{fqdn}";
+        logger.LogInformation("CitrixSsoTest: S4U2Self UPN={UPN}", upn);
+        s4uIdentity = new WindowsIdentity(upn);
+    }
+    catch (Exception ex)
+    {
+        return Results.Ok(new { ssoResult = "FAIL", reason = $"S4U2Self selhal: {ex.Message}", user = userName });
+    }
 
     string authMethodsResult;
     try
@@ -1031,7 +1054,7 @@ app.MapGet("/api/citrix-sso/test", async (HttpContext ctx, IConfiguration config
         var cookieNames = string.Join(", ", allCookies.Select(c => c.Name));
 
         // DomainPassthrough s credentials (impersonace uživatele)
-        authMethodsResult = await WindowsIdentity.RunImpersonatedAsync(windowsIdentity.AccessToken, async () =>
+        authMethodsResult = await WindowsIdentity.RunImpersonatedAsync(s4uIdentity.AccessToken, async () =>
         {
             using var authHandler = new HttpClientHandler
             {

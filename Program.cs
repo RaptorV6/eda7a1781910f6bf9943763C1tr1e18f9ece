@@ -1025,22 +1025,22 @@ app.MapGet("/api/citrix-sso/test", async (HttpContext ctx, IConfiguration config
                 break;
             }
 
-            // Zjistíme dostupné auth metody
             var cookies = handler.CookieContainer.GetCookies(storeUri);
             var csrf = cookies.Cast<Cookie>().FirstOrDefault(c => c.Name.Equals("CsrfToken", StringComparison.OrdinalIgnoreCase))?.Value ?? "";
 
-            using var authReq = new HttpRequestMessage(HttpMethod.Post, new Uri(storeUri, "Authentication/GetAuthMethods"));
-            authReq.Headers.Add("Accept", "application/xml, text/xml, */*");
-            authReq.Headers.Add("X-Requested-With", "XMLHttpRequest");
-            authReq.Headers.Add("X-Citrix-IsUsingHTTPS", storeUri.Scheme == "https" ? "Yes" : "No");
-            if (!string.IsNullOrEmpty(csrf)) authReq.Headers.Add("Csrf-Token", csrf);
-            authReq.Headers.Add("Referer", storeUri.ToString());
-            authReq.Content = new StringContent("", Encoding.UTF8, "application/x-www-form-urlencoded");
+            // Zkus Domain Pass-through login
+            using var dptReq = new HttpRequestMessage(HttpMethod.Get, new Uri(storeUri, "DomainPassthroughAuth/Login"));
+            dptReq.Headers.Add("Accept", "application/xml, text/xml, */*");
+            dptReq.Headers.Add("X-Requested-With", "XMLHttpRequest");
+            dptReq.Headers.Add("X-Citrix-IsUsingHTTPS", storeUri.Scheme == "https" ? "Yes" : "No");
+            if (!string.IsNullOrEmpty(csrf)) dptReq.Headers.Add("Csrf-Token", csrf);
+            dptReq.Headers.Add("Referer", storeUri.ToString());
 
-            using var authResp = await client.SendAsync(authReq);
-            var authBody = await authResp.Content.ReadAsStringAsync();
-            var preview = authBody.Length > 800 ? authBody[..800] + "..." : authBody;
-            return $"GetAuthMethods → {(int)authResp.StatusCode} | csrf={!string.IsNullOrEmpty(csrf)} | Body: {preview}";
+            using var dptResp = await client.SendAsync(dptReq);
+            var dptBody = await dptResp.Content.ReadAsStringAsync();
+            var dptPreview = dptBody.Length > 800 ? dptBody[..800] + "..." : dptBody;
+            var wwwAuth = dptResp.Headers.WwwAuthenticate.ToString();
+            return $"DomainPassthroughAuth/Login → {(int)dptResp.StatusCode} | csrf={!string.IsNullOrEmpty(csrf)} | WWW-Auth: {wwwAuth} | Body: {dptPreview}";
         });
     }
     catch (Exception ex)

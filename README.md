@@ -1,59 +1,98 @@
-# Citrix StoreFront PoC
+# CitrixComponent
 
-Účelem je vytvořit komponentu, která dokáže nahradit oficiální Citrix StoreFront UI uvnitř firemního portálu — uživatel se přihlásí, vidí seznam jemu přidělených Citrix aplikací jako dlaždice a klikem některou spustí v Citrix Workspace App. Veškerá komunikace s Citrix StoreFrontem probíhá server-side; prohlížeč nikdy nedostane přímý přístup ke Citrix endpointům ani jeho session cookies.
+Reusable ASP.NET Core 10 komponenta pro integraci Citrix StoreFrontu do libovolné hostitelské aplikace. Uživatel se přihlásí, vidí seznam jemu přidělených Citrix aplikací jako dlaždice a klikem některou spustí v Citrix Workspace App. Veškerá komunikace s Citrix StoreFrontem probíhá server-side; prohlížeč nikdy nedostane přímý přístup ke Citrix endpointům ani jeho session cookies.
+
+> **Není to portál ani okleštěná verze Citrixu.** Je to komponenta — server-side proxy vrstva která hovoří protokolem StoreFront API a překládá ho do vlastního UI. Jde embedovat do jakékoli hostitelské .NET webové aplikace.
 
 ## Jak to funguje
 
-Citrix StoreFront je interní firemní server, na kterém jsou napojené virtualizované aplikace (GINIS, Edge, Visual Studio…). Má vlastní webovou stránku, která se ale nedá pěkně vložit do firemního portálu. Tato komponenta funguje jako tlumočník mezi portálem a Citrixem: uživatel mluví s portálem, portál to za něj přeloží do jazyka Citrixu a zase zpět.
+### Kontext: co je StoreFront a proč to děláme takhle
 
-### Při přihlášení
+Citrix StoreFront je webový server od Citrixu, který spravuje přihlášení a seznam virtualizovaných aplikací. Má vlastní UI na `citrixgw01.fis.acr` — ale to UI nelze embedovat do jiné aplikace (má `X-Frame-Options: deny`) ani přizpůsobit vizuálně.
 
-Uživatel zadá jméno, heslo a doménu do formuláře. Portál tyhle údaje vezme a sám projde celé Citrix přihlášení místo uživatele — odehrává roli "robotického prohlížeče". Nasbírá si přístupové sušenky (cookies), získá seznam aplikací, které má uživatel v Citrixu přidělené (Citrix admin to řídí v Citrix Studio podle skupin v Active Directory; každý uživatel může mít jiný seznam), a pošle ten seznam zpět do prohlížeče jako dlaždice s ikonami.
+StoreFront zároveň vystavuje **REST/XML API** — přesně to samé API co používá jeho vlastní webový frontend. Tato komponenta to API volá přímo ze serveru, bez jakéhokoli Citrix kódu. Vznikla reverzním inženýrstvím: zachytit HTTP provoz prohlížeče na officiálním Citrix UI (HAR capture), pochopit sekvenci volání, zreplikovat ji v C#.
 
-Přístupové sušenky zůstávají server-side. Prohlížeč dostane jen náhodný kód (token), kterým se identifikuje při dalších akcích. Pokud by někdo prohlížeč napadl, dostane kód, ne klíče od Citrixu.
+### Přihlášení — server-side auth flow
 
-### Při kliku na dlaždici
+Citrix StoreFront nevystavuje jednoduché `POST /login` s username/heslo. Přihlášení je 7-krokový HTTP protokol, který komponenta provádí celý na serveru:
 
-Klik dlaždice neznamená "spustit aplikaci v prohlížeči". Citrix aplikace běží na vzdáleném Citrix serveru a streamuje obraz do programu na uživatelově PC — Citrix Workspace App. Tu musí mít každý, kdo chce Citrix aplikace pouštět; v korporátu typicky předinstalovaná IT-čkem.
+```
+1. GET  /Citrix/FISWeb/                 → NetScaler vrátí 302 přesměrování
+2. GET  /cgi/setclient?wica             → 200 HTML obsahující <meta http-equiv="refresh">
+                                          (není to HTTP redirect — je to HTML tag)
+3. GET  /Citrix/FISWeb/                 → StoreFront vytvoří session (ASP.NET_SessionId + CsrfToken)
+4. POST /Authentication/GetAuthMethods  → XML: jaké auth metody StoreFront podporuje
+5. POST /ExplicitAuth/Login             → XML: formulář s ID políček a StateContext token
+6. POST /ExplicitAuth/LoginAttempt      → přihlášení; odpověď: <Result>success</Result>
+7. POST /Resources/List                 → JSON: seznam aplikací přiřazených tomuto uživateli
+```
 
-Sekvence po kliku:
+Proč `AllowAutoRedirect = false`: standardní HTTP klient by kroky 1 a 3 provedl sám, ale krok 2 je HTML `<meta refresh>` (HTTP 200, ne 3xx) — ten žádný klient nesleduje automaticky. Proto komponenta sleduje všechna přesměrování ručně a po každém kroku čte cookies.
 
-1. Portál se zeptá Citrixu: "Dej mi vstupenku pro tuhle aplikaci."
-2. Citrix vrátí jednorázovou vstupenku platnou 30 sekund.
-3. Portál tu vstupenku zabalí do speciálního odkazu ve formátu `receiver://...`. Tohle URL schéma je registrované jako "rozumí mu Citrix Workspace App" — funguje stejně jako `mailto:` rozumí poštovní klient.
-4. Prohlížeč ten odkaz předá Workspace App nainstalované na PC.
-5. Workspace App si vstupenku vymění za otevřenou Citrix relaci a aplikace naběhne v jejím okně.
+Přiřazení aplikací uživateli řídí Citrix admin v Citrix Studio podle skupin v Active Directory — každý uživatel může vidět jiný seznam.
 
-Žádný download `.ica` souboru, žádné okno se stahováním. Klik → aplikace. Stejný UX jako oficiální Citrix StoreFront.
+### Session a bezpečnost
 
-### Ověření strukturální správnosti
+Po úspěšném přihlášení komponenta uloží Citrix session cookies (`ASP.NET_SessionId`, `CsrfToken`, `NSC_*`, `CtxsAuthId`) do serverové paměti (`IMemoryCache`) pod náhodným GUID. Prohlížeč dostane jen tento GUID — nikdy ne samotné cookies.
 
-Stáhnutý `.ica` soubor (vstupenka) z této komponenty obsahuje deterministický kontrolní součet `SessionsharingKey`, odvozený z aplikace, serveru a konfigurace. Pro stejný resource je tato hodnota bit-identická s `.ica` z oficiálního Citrix StoreFrontu. Per-launch tokeny (`LogonTicket`, `STA*`, `ClearPassword`) jsou unikátní v každém launch — což je správně, jednorázové bezpečnostní tokeny.
+```
+Přihlášení:   browser → komponenta (HTTPS) → StoreFront (HTTPS)
+                                           ↓
+                              cookies → IMemoryCache[GUID]
+                              GUID → browser
 
-### Co bylo zákeřné
+Další akce:   browser pošle GUID → komponenta najde cookies → zavolá StoreFront
+```
 
-Citrix neudržuje pro tenhle scénář dokumentaci. Většina detailů byla odhalena experimentem (zachytit chování oficiálního klienta, porovnat s vlastní implementací, najít rozdíl, opakovat). Konkrétně:
+Heslo cestuje po síti výhradně přes HTTPS (TLS). Server ho neloguje — do logů jde pouze username a doména. Po dokončení přihlášení heslo ze serverové paměti zmizí.
 
-- **Bootstrap přesměrování v cyklech.** Mezi přihlášením je míchané HTTP přesměrování (rozumí mu prohlížeč) a HTML značka `<meta refresh>` (vypadá jako obyčejná stránka, ale ve skutečnosti přesměrovává). Žádný HTTP klient toto nedělá automaticky — nutné odsledovat manuálně s hop limitem a regex extraktorem.
-- **Citrix podle hlaviček pozná, kdo se ho ptá.** Když požadavky vypadaly jako "z aplikace" (`X-Requested-With: XMLHttpRequest`), Citrix odmítl vytvořit přihlášenou relaci. Když vypadaly jako "z prohlížeče" (jiné hlavičky), všechno prošlo. Chybová hláška to nikam nenapsala — vypadalo to, že náhodně padá.
-- **Tlačítko Přihlásit musí být v češtině.** Citrix validuje pole formuláře proti přesnému textu na tlačítku. `loginBtn=Log On` (jak je to v dokumentaci) zamítá. Stačilo to změnit na `loginBtn=Přihlásit`. Tenhle StoreFront je česká instalace.
-- **Bezpečnostní token (CSRF) se po každém kroku mění.** Cache-ování tokenu na začátku flow všechny další kroky rozbilo, protože server očekával nový token, ne starý.
-- **Internal vs public hostname.** Server-side komunikace probíhá na interním hostnamu (`citrixvpx01.fis.acr`). Citrix vrací vstupenku, která říká "stáhni si ICA z `citrixvpx01.fis.acr`". Jenže uživatelův počítač na interní adresu nedosáhne — chodí přes veřejnou bránu (`pnagent.fis.acr`). Bez přepisu té adresy v odpovědi se vstupenka nedá použít. Nejvíc zdržující detail, protože všechno fungovalo až do okamžiku spuštění, pak Workspace App tiše selhal bez chybové hlášky.
-- **Workspace App musí mít přidaný store.** Když uživatel `receiver://` link kliknul a Workspace App neměla Citrix přidaný jako "známý účet", taky tiše selhala. Po přidání store v UI Workspace App (Add Account → URL discovery) všechno fungovalo. Pro celofiremní nasazení jde pushnout přes GPO s parametrem MSI instalace.
+### Spuštění aplikace — receiver:// protokol
+
+Citrix aplikace neběží v prohlížeči. Běží na vzdáleném Citrix serveru (XenApp/CVAD) a obraz se streamuje do **Citrix Workspace App** nainstalované na PC uživatele. Workspace App při instalaci zaregistruje `receiver://` jako OS-level URL handler — stejně jako `mailto:` otevře poštovního klienta.
+
+Sekvence po kliku na dlaždici:
+
+```
+1. Browser zavolá: POST /api/citrix-launch-status?session=<GUID>&resourceId=<id>
+2. Komponenta zavolá StoreFront: POST /Resources/GetLaunchStatus/<id>
+   → StoreFront vrátí JSON s fileFetchUrl + fileFetchTicket (platnost ~30 s)
+3. Komponenta přepíše fileFetchUrl:
+   citrixvpx01.fis.acr  →  pnagent.fis.acr
+   (interní hostname → veřejná gateway; PC uživatele interní hostname nevidí)
+4. Browser sestaví receiver:// URL a přesměruje na něj
+5. OS předá URL Workspace App → ta fetchne ICA soubor z gateway → spustí HDX session
+```
+
+Klik → aplikace naběhne v okně Workspace App. Žádné viditelné stahování, žádné dialogy.
+
+### Ověření správnosti implementace
+
+Komponenta generuje ICA soubory (vstupenky) strukturálně identické s officiálním Citrix StoreFront UI. Konkrétně `SessionsharingKey` — deterministická hodnota odvozená z aplikace, serveru a konfigurace — je bit-identická s hodnotou z officiálního StoreFrontu pro stejný resource. Per-launch tokeny (`LogonTicket`, `STA*`) jsou unikátní v každém launch, jak má být.
+
+### Co bylo zákeřné (pro budoucí integrátory)
+
+Citrix pro tento scénář nemá dokumentaci. Vše vzniklo experimentem:
+
+- **`<meta refresh>` není HTTP redirect.** NetScaler vrátí HTTP 200 s HTML stránkou obsahující `<META HTTP-EQUIV="REFRESH">`. Žádný HTTP klient toto nenásleduje automaticky — nutné parsovat regex extraktorem.
+- **Hlavičky prozradí, kdo volá.** Pokud bootstrap requesty obsahují `X-Requested-With: XMLHttpRequest` (AJAX marker), StoreFront nevytvoří `ASP.NET_SessionId`. Session pak chybí a každý další krok vrátí `sessiontimeout`. Chyba nikam nenapsala proč — vypadalo to jako náhodné selhání.
+- **Submit button musí být česky.** StoreFront validuje name=value párů formuláře včetně submit buttonu. `loginBtn=Log On` (dokumentace) zamítá. Správně je `loginBtn=Přihlásit` — tenhle StoreFront je česká instalace. Komponenta parsuje správnou hodnotu z XML formuláře, hard-coded fallback jen při selhání parseru.
+- **CsrfToken se rotuje po každém hopu.** Token z kroku 3 je stale v kroku 6. Nutné re-číst cookie po každém API volání.
+- **Internal vs public hostname v ICA.** StoreFront vrátí `fileFetchUrl` s interním hostname (`citrixvpx01.fis.acr`). Workspace App na klientovi ho nedosáhne — chodí přes `pnagent.fis.acr`. Bez přepisu Workspace App tiše selže bez chybové hlášky.
+- **Workspace App musí mít přidaný store.** `receiver://` link selže tiše, pokud Workspace App nemá store přidaný (Add Account → URL discovery). Pro hromadné nasazení: MSI parametr `STORE0=...` nebo GPO.
 
 ## Architektura
 
 ```
 [Browser]  ──┐
-             │  HTTPS (jen na portál)
+             │  HTTPS (jen na komponentu)
              ▼
-        [Portal]  ─────────────────►  [Citrix StoreFront]
-        ASP.NET Core 10                 (interní hostname)
-        IMemoryCache session cache       │
-        Anti-SSRF proxy                  │ HDX session
-                                         ▼
-                            [Workspace App na klientu]
-                            (přes public gateway)
+    [CitrixComponent]  ───────────►  [Citrix StoreFront]
+    ASP.NET Core 10                   (interní hostname)
+    IMemoryCache session cache         │
+    Anti-SSRF proxy                    │ HDX session
+                                       ▼
+                          [Workspace App na klientu]
+                          (přes public gateway)
 ```
 
 Tři interní HTTP endpointy:
@@ -66,7 +105,7 @@ Tři interní HTTP endpointy:
 
 Session cache (`CitrixSessionCache`) drží `CookieContainer` s autentizovanými cookies (`ASP.NET_SessionId`, `CsrfToken`, `NSC_*`) pod náhodným GUID. TTL 20 min sliding (= StoreFront default). Browser drží jen GUID.
 
-Spuštění aplikace probíhá protokolem `receiver://` (registrovaným Citrix Workspace App při instalaci jako OS-level URL handler). Portál sestaví URL ve formátu:
+Spuštění aplikace probíhá protokolem `receiver://` (registrovaným Citrix Workspace App při instalaci jako OS-level URL handler). Komponenta sestaví URL ve formátu:
 
 ```
 receiver://<public-gateway>/<store-path>/clientAssistant/getIcaFile/<base64-params>
@@ -186,16 +225,17 @@ End-to-end funkční. Auth + Resources/List + ikony proxy + receiver:// silent l
 
 ### Automatická autentizace přes Active Directory
 
-Cílem je odstranit přihlašovací formulář — uživatel otevře portál a vidí dlaždice okamžitě. Předpokládá použití Citrix StoreFront `IntegratedWindows` auth metody (`DomainPassthroughAuth/Login`) s Kerberos delegací identity uživatele přes service account, pod kterým běží portál.
+Cílem je odstranit přihlašovací formulář — uživatel otevře komponentu a vidí dlaždice okamžitě. Předpokládá použití Citrix StoreFront `IntegratedWindows` auth metody (`DomainPassthroughAuth/Login`) s Kerberos delegací identity uživatele přes service account, pod kterým komponenta běží.
 
 Vyžaduje:
 - Service account v AD
-- SPN registrace pro hostname portálu (`HTTP/portal.<doména>`)
-- Resource-based Constrained Delegation (RBCD) na Citrix StoreFront server (`Set-ADComputer ... -PrincipalsAllowedToDelegateToAccount`) — funguje napříč doménami v rámci forest trust
+- SPN registrace pro hostname hostitelského serveru (`HTTP/<server>.<doména>`)
+- Resource-based Constrained Delegation (RBCD) na Citrix StoreFront server (`Set-ADComputer VXXXX22FISXVA09 -PrincipalsAllowedToDelegateToAccount <hostitelský-server>`)
+- Trust mezi uživatelskými doménami a FIS doménou bez SID filtering quarantine na obou stranách
 - Citrix StoreFront: `Domain Pass-through` enabled, Trusted Domains konfigurované pro všechny relevantní domény uživatelů
-- Code: `Microsoft.AspNetCore.Authentication.Negotiate` + nový endpoint `/api/citrix-diagnostics/sso-login` s `[Authorize]` a `WindowsIdentity.RunImpersonated` pro Kerberos delegaci
+- Code: `Microsoft.AspNetCore.Authentication.Negotiate` + endpoint s `[Authorize]` a `WindowsIdentity.RunImpersonated(HttpContext.User.AccessToken)` pro Kerberos delegaci přes RBCD
 
-Frontend pokus SSO endpoint first, fallback na manuální form při 401 (zachová backwards compatibility pro mimo-doménové scénáře).
+Frontend zkusí SSO automaticky při načtení stránky, fallback na manuální formulář při 401.
 
 ### Refactor pro produkci
 
@@ -207,6 +247,68 @@ Detaily v [`docs/code-audit.md`](docs/code-audit.md). Hlavní body:
 - Distribuovaná cache (Redis) místo `IMemoryCache` pro multi-instance scaling
 - CSS + JS extrakce z `Pages/Index.cshtml` (1060 řádků inline) do `wwwroot/`
 - Unit testy s mocked `HttpClient`, integration testy proti reálnému StoreFrontu
+
+## Co je v kódu
+
+### Program.cs — veškerá backend logika
+
+Celý backend žije v jednom souboru (`Program.cs`, ~1400 řádků). Struktura:
+
+**Horní část — setup:**
+```csharp
+builder.Services.AddRazorPages();
+builder.Services.AddMemoryCache();
+builder.Services.AddSingleton<CitrixSessionCache>();
+builder.Services.AddAuthentication(IISDefaults.AuthenticationScheme);
+```
+Registrace služeb: Razor Pages pro frontend, IMemoryCache pro server-side session storage, Windows Auth přes IIS.
+
+**Endpointy (minimal API):**
+
+| Endpoint | Co dělá |
+|---|---|
+| `POST /api/citrix-diagnostics/client-log` | Přijme log zprávu z browseru, zaloguje ji server-side |
+| `POST /api/citrix-diagnostics/server-probe` | Diagnostický: pošle libovolný HTTP request na StoreFront a vrátí odpověď (pro ladění) |
+| `POST /api/citrix-diagnostics/explicit-login` | **Hlavní endpoint** — 7-krokový auth flow, vrátí seznam apps + session token |
+| `POST /api/citrix-launch-status` | Vyžádá launch ticket pro konkrétní aplikaci, přepíše interní hostname na public gateway |
+| `GET /api/citrix-proxy` | Authenticated proxy: ikony aplikací + ICA download |
+
+**Dolní část — helper třídy:**
+
+```
+CitrixSessionCache        wrapper nad IMemoryCache; GUID → CookieContainer + storeRootUri
+CitrixSessionEntry        jedna autentizovaná session (cookies + URL)
+CitrixAuthFormDefinition  parsovaný login formulář ze StoreFrontu (field IDs ze XML)
+CitrixExplicitAuth        statická třída: helper metody pro hlavičky, XML parsing, preview
+```
+
+### explicit-login: 7-krokový auth flow
+
+Toto je srdce celé komponenty. Simuluje přesně co dělá prohlížeč na `citrixgw01.fis.acr`:
+
+```
+Krok 1  GET /Citrix/FISWeb/                     → 302 na NetScaler bootstrap
+Krok 2  GET /cgi/setclient?wica                 → 200 HTML s <meta refresh> (ne 3xx!)
+Krok 3  GET /Citrix/FISWeb → 301 → /Citrix/FISWeb/  → StoreFront vytvoří ASP.NET_SessionId
+Krok 4  POST /Authentication/GetAuthMethods     → XML seznam auth metod
+Krok 5  POST /ExplicitAuth/Login                → XML formulář (field IDs, StateContext)
+Krok 6  POST /ExplicitAuth/LoginAttempt         → přihlášení; <Result>success</Result>
+Krok 7  POST /Resources/List                    → JSON seznam aplikací uživatele
+```
+
+Po kroku 7: cookies uloženy do `IMemoryCache` pod GUID, GUID vrácen browseru. Heslo v paměti zanikne.
+
+### Pages/Index.cshtml — frontend
+
+Razor Page (~1000 řádků, HTML + inline CSS + JavaScript). Obsahuje:
+- Login formulář (username, heslo, doména)
+- JavaScript volající `/api/citrix-diagnostics/explicit-login` přes `fetch()`
+- Grid dlaždic s ikonami načtenými přes `/api/citrix-proxy`
+- Click handler: `fetch('/api/citrix-launch-status')` → sestaví `receiver://` URL → `window.location` předá Workspace App
+
+### appsettings.json — konfigurace
+
+Jediný konfigurační soubor. Při nasazení na jiný server stačí změnit hodnoty zde — bez překompilování.
 
 ## Struktura repozitáře
 

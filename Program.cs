@@ -974,42 +974,67 @@ app.MapGet("/api/citrix-sso/test", async (HttpContext ctx, IConfiguration config
     var storeRootUrl = config["CitrixDiagnostics:BaseUrl"] ?? "";
 
     if (ctx.User.Identity is not WindowsIdentity windowsIdentity || !windowsIdentity.IsAuthenticated)
-        return Results.Ok(new { ssoResult = "FAIL", reason = "Windows identita není dostupná." });
+        return Results.Ok(new { step = "windows-auth", error = "Windows identita není dostupná." });
 
-    var userName = windowsIdentity.Name; // např. FIS\svobodama nebo ACR\VanD
-    logger.LogInformation("CitrixSsoTest: user={User}", userName);
+    var userName = windowsIdentity.Name;
+    var processIdentity = WindowsIdentity.GetCurrent().Name;
+    var upnFromClaims = windowsIdentity.Claims
+        .FirstOrDefault(c => c.Type == System.Security.Claims.ClaimTypes.Upn)?.Value ?? "";
+    var allClaims = windowsIdentity.Claims
+        .Select(c => $"{c.Type.Split('/').Last()}={c.Value}")
+        .ToList();
 
-    // S4U2Self — vytvoř Kerberos token ze jména bez hesla
-    WindowsIdentity s4uIdentity;
+    // Krok 1 — DNS
+    string dnsResult;
+    if (!Uri.TryCreate(storeRootUrl, UriKind.Absolute, out var storeUri))
+        return Results.Ok(new { step = "config", error = "Chybí nebo neplatná CitrixDiagnostics:BaseUrl.", baseUrl = storeRootUrl });
     try
     {
-        // Převod DOMAIN\user → user@domain.fqdn
-        var domainMap = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
-        {
-            ["FIS"] = "fis.acr",
-            ["ACR"] = "acr"
-        };
-        var parts = userName.Split('\\');
-        var netbios = parts.Length == 2 ? parts[0] : "";
-        var user = parts.Length == 2 ? parts[1] : userName;
-        var fqdn = domainMap.TryGetValue(netbios, out var d) ? d : $"{netbios.ToLower()}.acr";
-        var upn = $"{user}@{fqdn}";
-        logger.LogInformation("CitrixSsoTest: S4U2Self UPN={UPN}", upn);
-        s4uIdentity = new WindowsIdentity(upn);
+        var addrs = await System.Net.Dns.GetHostAddressesAsync(storeUri.Host);
+        dnsResult = string.Join(", ", addrs.Select(a => a.ToString()));
     }
     catch (Exception ex)
     {
-        return Results.Ok(new { ssoResult = "FAIL", reason = $"S4U2Self selhal: {ex.Message}", user = userName });
+        return Results.Ok(new { step = "dns", error = ex.Message, host = storeUri.Host });
     }
 
-    string authMethodsResult;
+    // Krok 2 — S4U2Self
+    WindowsIdentity s4uIdentity;
+    string s4uUpn;
     try
     {
-        // Bootstrap bez credentials (aby NetScaler nevyrušil session creation)
-        var sharedCookies = new CookieContainer();
-        if (!Uri.TryCreate(storeRootUrl, UriKind.Absolute, out var storeUri))
-            return Results.Ok(new { ssoResult = "FAIL", reason = "Chybí nebo neplatná CitrixDiagnostics:BaseUrl." });
+        if (!string.IsNullOrWhiteSpace(upnFromClaims))
+        {
+            s4uUpn = upnFromClaims;
+        }
+        else
+        {
+            var domainMap = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+            {
+                ["FIS"] = "fis.acr",
+                ["ACR"] = "acr"
+            };
+            var parts = userName.Split('\\');
+            var netbios = parts.Length == 2 ? parts[0] : "";
+            var user = parts.Length == 2 ? parts[1] : userName;
+            var fqdn = domainMap.TryGetValue(netbios, out var d) ? d : $"{netbios.ToLower()}.acr";
+            s4uUpn = $"{user}@{fqdn}";
+        }
+        s4uIdentity = new WindowsIdentity(s4uUpn);
+    }
+    catch (Exception ex)
+    {
+        return Results.Ok(new { step = "s4u2self", error = ex.Message, windowsUser = userName, processUser = processIdentity });
+    }
 
+    var impLevel = s4uIdentity.ImpersonationLevel.ToString();
+
+    // Krok 3 — Bootstrap (bez credentials)
+    var sharedCookies = new CookieContainer();
+    var bootstrapLog = new List<string>();
+    string bootstrapError = "";
+    try
+    {
         using var bootstrapHandler = new HttpClientHandler
         {
             AllowAutoRedirect = false,
@@ -1020,7 +1045,6 @@ app.MapGet("/api/citrix-sso/test", async (HttpContext ctx, IConfiguration config
         };
         using var bootstrapClient = new HttpClient(bootstrapHandler) { Timeout = TimeSpan.FromSeconds(15) };
 
-        var bootstrapLog = new List<string>();
         var currentUrl = storeUri;
         for (int hop = 0; hop < 8; hop++)
         {
@@ -1028,7 +1052,7 @@ app.MapGet("/api/citrix-sso/test", async (HttpContext ctx, IConfiguration config
                 CitrixExplicitAuth.CreatePageHeaders(storeUri));
             using var resp = await bootstrapClient.SendAsync(req);
             var hopCookies = string.Join(",", sharedCookies.GetCookies(storeUri).Cast<Cookie>().Select(c => c.Name));
-            bootstrapLog.Add($"hop{hop}: {(int)resp.StatusCode} {currentUrl.PathAndQuery} cookies=[{hopCookies}]");
+            bootstrapLog.Add($"hop{hop}: {(int)resp.StatusCode} {currentUrl} cookies=[{hopCookies}]");
 
             if (resp.StatusCode is System.Net.HttpStatusCode.Moved or System.Net.HttpStatusCode.Found or System.Net.HttpStatusCode.SeeOther)
             {
@@ -1036,8 +1060,6 @@ app.MapGet("/api/citrix-sso/test", async (HttpContext ctx, IConfiguration config
                 if (resp.Headers.Location?.IsAbsoluteUri == true)
                 {
                     var loc = resp.Headers.Location;
-                    // Přepíšeme host pokud redirect jde na jiný hostname (např. citrixgw01 místo citrixvpx01)
-                    // aby server-side DNS fungovala — klient na citrixgw01 dosáhne, server ne.
                     nextUrl = loc.Host.Equals(storeUri.Host, StringComparison.OrdinalIgnoreCase)
                         ? loc
                         : new UriBuilder(loc) { Host = storeUri.Host, Port = storeUri.Port }.Uri;
@@ -1056,33 +1078,109 @@ app.MapGet("/api/citrix-sso/test", async (HttpContext ctx, IConfiguration config
             {
                 Uri nextUrl;
                 if (Uri.TryCreate(metaUrl, UriKind.Absolute, out var absMetaUri))
-                {
                     nextUrl = absMetaUri.Host.Equals(storeUri.Host, StringComparison.OrdinalIgnoreCase)
                         ? absMetaUri
                         : new UriBuilder(absMetaUri) { Host = storeUri.Host, Port = storeUri.Port }.Uri;
-                }
                 else
-                {
                     nextUrl = new Uri(currentUrl, metaUrl);
-                }
                 currentUrl = nextUrl;
                 continue;
             }
             break;
         }
+    }
+    catch (Exception ex)
+    {
+        bootstrapError = ex.Message;
+        return Results.Ok(new { step = "bootstrap", error = bootstrapError, bootstrapLog, dnsResult, host = storeUri.Host, windowsUser = userName, s4uUpn, impLevel });
+    }
 
-        // Hledej cookies na všech možných cestách
-        var checkUris = new[] { storeUri, new Uri(storeUri, "/Citrix/FISWeb/"), new Uri(storeUri, "/"), new Uri($"{storeUri.Scheme}://{storeUri.Host}/") };
-        var allCookies = checkUris.SelectMany(u => sharedCookies.GetCookies(u).Cast<Cookie>()).DistinctBy(c => c.Name).ToList();
-        var csrf = allCookies.FirstOrDefault(c => c.Name.Equals("CsrfToken", StringComparison.OrdinalIgnoreCase))?.Value ?? "";
-        var cookieNames = string.Join(", ", allCookies.Select(c => c.Name));
+    var checkUris = new[] { storeUri, new Uri(storeUri, "/Citrix/FISWeb/"), new Uri(storeUri, "/"), new Uri($"{storeUri.Scheme}://{storeUri.Host}/") };
+    var allCookies = checkUris.SelectMany(u => sharedCookies.GetCookies(u).Cast<Cookie>()).DistinctBy(c => c.Name).ToList();
+    var csrf = allCookies.FirstOrDefault(c => c.Name.Equals("CsrfToken", StringComparison.OrdinalIgnoreCase))?.Value ?? "";
+    var cookieNames = string.Join(", ", allCookies.Select(c => c.Name));
 
-        // DomainPassthrough s credentials (impersonace uživatele)
-        authMethodsResult = await WindowsIdentity.RunImpersonatedAsync(s4uIdentity.AccessToken, async () =>
+    // Krok 4 — GetAuthMethods (bez credentials) — zakládá ASP.NET session + CsrfToken
+    string getAuthMethodsStatus = "";
+    string getAuthMethodsError = "";
+    try
+    {
+        using var sessionHandler = new HttpClientHandler
+        {
+            AllowAutoRedirect = false,
+            UseCookies = true,
+            CookieContainer = sharedCookies,
+            AutomaticDecompression = DecompressionMethods.All,
+            ServerCertificateCustomValidationCallback = HttpClientHandler.DangerousAcceptAnyServerCertificateValidator
+        };
+        using var sessionClient = new HttpClient(sessionHandler) { Timeout = TimeSpan.FromSeconds(15) };
+        var authMethodsUri = new Uri(storeUri, "Authentication/GetAuthMethods");
+        var amHeaders = CitrixExplicitAuth.CreateBaseHeaders(storeUri, authMethodsUri, storeUri.Scheme == "https" ? "Yes" : "No");
+        amHeaders["X-Citrix-AM-CredentialTypes"] = CitrixExplicitAuth.FormCredentialTypes;
+        amHeaders["X-Citrix-AM-LabelTypes"] = CitrixExplicitAuth.FormLabelTypes;
+        using var amReq = CitrixExplicitAuth.CreateRequest(HttpMethod.Post, authMethodsUri, amHeaders, "", "application/x-www-form-urlencoded; charset=UTF-8");
+        using var amResp = await sessionClient.SendAsync(amReq);
+        var amBody = await amResp.Content.ReadAsStringAsync();
+        getAuthMethodsStatus = $"{(int)amResp.StatusCode}";
+
+        // Obnov csrf po GetAuthMethods
+        var updatedCookies = checkUris.SelectMany(u => sharedCookies.GetCookies(u).Cast<Cookie>()).DistinctBy(c => c.Name).ToList();
+        csrf = updatedCookies.FirstOrDefault(c => c.Name.Equals("CsrfToken", StringComparison.OrdinalIgnoreCase))?.Value ?? "";
+        cookieNames = string.Join(", ", updatedCookies.Select(c => c.Name));
+    }
+    catch (Exception ex)
+    {
+        getAuthMethodsError = ex.Message;
+    }
+
+    // Krok 5a — DomainPassthrough BEZ impersonace (jako app_zadosti) — test konektivity
+    string dptNoImpStatus = "";
+    string dptNoImpError = "";
+    string dptNoImpWwwAuth = "";
+    try
+    {
+        using var noImpHandler = new HttpClientHandler
+        {
+            UseDefaultCredentials = true,
+            UseProxy = false,
+            AllowAutoRedirect = false,
+            UseCookies = false,
+            AutomaticDecompression = DecompressionMethods.All,
+            ServerCertificateCustomValidationCallback = HttpClientHandler.DangerousAcceptAnyServerCertificateValidator
+        };
+        using var noImpClient = new HttpClient(noImpHandler) { Timeout = TimeSpan.FromSeconds(15) };
+        var dptUri2 = new Uri(storeUri, "DomainPassthroughAuth/Login");
+        using var noImpReq = new HttpRequestMessage(HttpMethod.Post, dptUri2);
+        noImpReq.Headers.Add("Accept", "application/xml, text/xml, */*");
+        noImpReq.Headers.Add("X-Requested-With", "XMLHttpRequest");
+        noImpReq.Headers.Add("X-Citrix-IsUsingHTTPS", storeUri.Scheme == "https" ? "Yes" : "No");
+        if (!string.IsNullOrEmpty(csrf)) noImpReq.Headers.Add("Csrf-Token", csrf);
+        noImpReq.Headers.Add("Referer", storeUri.ToString());
+        noImpReq.Content = new StringContent("", Encoding.UTF8, "application/x-www-form-urlencoded");
+        using var noImpResp = await noImpClient.SendAsync(noImpReq);
+        var noImpBody = await noImpResp.Content.ReadAsStringAsync();
+        dptNoImpStatus = $"{(int)noImpResp.StatusCode} | WWW-Auth: {noImpResp.Headers.WwwAuthenticate} | body: {(noImpBody.Length > 300 ? noImpBody[..300] + "..." : noImpBody)}";
+        dptNoImpWwwAuth = noImpResp.Headers.WwwAuthenticate.ToString();
+    }
+    catch (Exception ex)
+    {
+        dptNoImpError = ex.Message;
+    }
+
+    // Krok 5 — DomainPassthrough s impersonací
+    string authStep = "";
+    string authError = "";
+    string dptStatus = "";
+    string dptBody2 = "";
+    string wwwAuth = "";
+    try
+    {
+        (authStep, authError, dptStatus, dptBody2, wwwAuth) = await WindowsIdentity.RunImpersonatedAsync(s4uIdentity.AccessToken, async () =>
         {
             using var authHandler = new HttpClientHandler
             {
                 UseDefaultCredentials = true,
+                UseProxy = false,
                 AllowAutoRedirect = false,
                 UseCookies = true,
                 CookieContainer = sharedCookies,
@@ -1091,7 +1189,8 @@ app.MapGet("/api/citrix-sso/test", async (HttpContext ctx, IConfiguration config
             };
             using var authClient = new HttpClient(authHandler) { Timeout = TimeSpan.FromSeconds(15) };
 
-            using var dptReq = new HttpRequestMessage(HttpMethod.Post, new Uri(storeUri, "DomainPassthroughAuth/Login"));
+            var dptUri = new Uri(storeUri, "DomainPassthroughAuth/Login");
+            using var dptReq = new HttpRequestMessage(HttpMethod.Post, dptUri);
             dptReq.Headers.Add("Accept", "application/xml, text/xml, */*");
             dptReq.Headers.Add("X-Requested-With", "XMLHttpRequest");
             dptReq.Headers.Add("X-Citrix-IsUsingHTTPS", storeUri.Scheme == "https" ? "Yes" : "No");
@@ -1100,21 +1199,38 @@ app.MapGet("/api/citrix-sso/test", async (HttpContext ctx, IConfiguration config
             dptReq.Content = new StringContent("", Encoding.UTF8, "application/x-www-form-urlencoded");
 
             using var dptResp = await authClient.SendAsync(dptReq);
-            var dptBody = await dptResp.Content.ReadAsStringAsync();
-            var dptPreview = dptBody.Length > 800 ? dptBody[..800] + "..." : dptBody;
-            var wwwAuth = dptResp.Headers.WwwAuthenticate.ToString();
-            return $"bootstrap=[{string.Join(" | ", bootstrapLog)}] || DomainPassthroughAuth/Login → {(int)dptResp.StatusCode} | csrf={!string.IsNullOrEmpty(csrf)} | cookies=[{cookieNames}] | WWW-Auth: {wwwAuth} | Body: {dptPreview}";
+            var body = await dptResp.Content.ReadAsStringAsync();
+            return ("dpt-call", "", $"{(int)dptResp.StatusCode} {dptResp.ReasonPhrase}", body.Length > 600 ? body[..600] + "..." : body, dptResp.Headers.WwwAuthenticate.ToString());
         });
     }
     catch (Exception ex)
     {
-        authMethodsResult = $"Chyba: {ex.Message}";
+        authError = ex.Message;
+        authStep = "dpt-call";
     }
 
     return Results.Ok(new
     {
+        step = string.IsNullOrEmpty(authError) ? "ok" : authStep,
+        error = authError,
         windowsUser = userName,
-        authMethodsResult
+        processUser = processIdentity,
+        upnFromClaims,
+        allClaims,
+        s4uUpn,
+        impLevel,
+        dnsResult,
+        host = storeUri.Host,
+        bootstrapLog,
+        getAuthMethodsStatus,
+        getAuthMethodsError,
+        csrf = !string.IsNullOrEmpty(csrf),
+        cookies = cookieNames,
+        dptNoImpStatus,
+        dptNoImpError,
+        dptStatus,
+        dptBody = dptBody2,
+        wwwAuth
     });
 });
 

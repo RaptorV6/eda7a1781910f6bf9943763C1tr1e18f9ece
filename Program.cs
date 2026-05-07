@@ -996,7 +996,9 @@ app.MapGet("/api/citrix-sso/test", async (HttpContext ctx, IConfiguration config
                 var resp = await client.GetAsync(storeRootUrl);
                 var body = await resp.Content.ReadAsStringAsync();
                 var preview = body.Length > 300 ? body[..300] + "..." : body;
-                return $"{(int)resp.StatusCode} {resp.StatusCode} | {preview}";
+                var location = resp.Headers.Location?.ToString() ?? "(žádný Location header)";
+                var wwwAuth = resp.Headers.WwwAuthenticate.ToString();
+                return $"{(int)resp.StatusCode} | Location: {location} | WWW-Authenticate: {wwwAuth} | Body: {preview}";
             }
             catch (Exception ex)
             {

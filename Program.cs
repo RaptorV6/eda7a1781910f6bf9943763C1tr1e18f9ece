@@ -1015,7 +1015,8 @@ app.MapGet("/api/citrix-sso/test", async (HttpContext ctx, IConfiguration config
             AllowAutoRedirect = false,
             UseCookies = true,
             CookieContainer = sharedCookies,
-            AutomaticDecompression = DecompressionMethods.All
+            AutomaticDecompression = DecompressionMethods.All,
+            ServerCertificateCustomValidationCallback = HttpClientHandler.DangerousAcceptAnyServerCertificateValidator
         };
         using var bootstrapClient = new HttpClient(bootstrapHandler) { Timeout = TimeSpan.FromSeconds(15) };
 
@@ -1062,7 +1063,8 @@ app.MapGet("/api/citrix-sso/test", async (HttpContext ctx, IConfiguration config
                 AllowAutoRedirect = false,
                 UseCookies = true,
                 CookieContainer = sharedCookies,
-                AutomaticDecompression = DecompressionMethods.All
+                AutomaticDecompression = DecompressionMethods.All,
+                ServerCertificateCustomValidationCallback = HttpClientHandler.DangerousAcceptAnyServerCertificateValidator
             };
             using var authClient = new HttpClient(authHandler) { Timeout = TimeSpan.FromSeconds(15) };
 

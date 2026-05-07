@@ -50,7 +50,7 @@ Result/notes:
 
 ```bash
 rm -rf ./publish
-dotnet publish -c Release -o ./publish
+dotnet publish CitrixComponent.csproj -c Release -o ./publish
 ```
 
 Result/notes:

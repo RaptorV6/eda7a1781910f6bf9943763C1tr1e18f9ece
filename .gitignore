@@ -28,3 +28,7 @@ logs/
 # .NET CLI tools cache (local dev env)
 .dotnet-cli/
 *.sln
+
+# publish output — build artifact, not source
+publish/
+publish-local-exe/

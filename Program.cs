@@ -1032,9 +1032,21 @@ app.MapGet("/api/citrix-sso/test", async (HttpContext ctx, IConfiguration config
 
             if (resp.StatusCode is System.Net.HttpStatusCode.Moved or System.Net.HttpStatusCode.Found or System.Net.HttpStatusCode.SeeOther)
             {
-                currentUrl = resp.Headers.Location?.IsAbsoluteUri == true
-                    ? resp.Headers.Location
-                    : new Uri(storeUri, resp.Headers.Location);
+                Uri nextUrl;
+                if (resp.Headers.Location?.IsAbsoluteUri == true)
+                {
+                    var loc = resp.Headers.Location;
+                    // Přepíšeme host pokud redirect jde na jiný hostname (např. citrixgw01 místo citrixvpx01)
+                    // aby server-side DNS fungovala — klient na citrixgw01 dosáhne, server ne.
+                    nextUrl = loc.Host.Equals(storeUri.Host, StringComparison.OrdinalIgnoreCase)
+                        ? loc
+                        : new UriBuilder(loc) { Host = storeUri.Host, Port = storeUri.Port }.Uri;
+                }
+                else
+                {
+                    nextUrl = new Uri(currentUrl, resp.Headers.Location);
+                }
+                currentUrl = nextUrl;
                 continue;
             }
 
@@ -1042,7 +1054,18 @@ app.MapGet("/api/citrix-sso/test", async (HttpContext ctx, IConfiguration config
             var metaUrl = CitrixExplicitAuth.TryExtractMetaRefreshUrl(body);
             if (!string.IsNullOrWhiteSpace(metaUrl))
             {
-                currentUrl = Uri.TryCreate(metaUrl, UriKind.Absolute, out var absUri) ? absUri : new Uri(storeUri, metaUrl);
+                Uri nextUrl;
+                if (Uri.TryCreate(metaUrl, UriKind.Absolute, out var absMetaUri))
+                {
+                    nextUrl = absMetaUri.Host.Equals(storeUri.Host, StringComparison.OrdinalIgnoreCase)
+                        ? absMetaUri
+                        : new UriBuilder(absMetaUri) { Host = storeUri.Host, Port = storeUri.Port }.Uri;
+                }
+                else
+                {
+                    nextUrl = new Uri(currentUrl, metaUrl);
+                }
+                currentUrl = nextUrl;
                 continue;
             }
             break;

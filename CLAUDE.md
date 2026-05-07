@@ -33,7 +33,7 @@ If a session is getting long, before `/compact`, or before ending work: run the 
 
 **Purpose:** ASP.NET Core 10 portal that authenticates against Citrix StoreFront server-side, lists user-assigned applications, and launches them silently via `receiver://` protocol handoff to Citrix Workspace App.
 
-**Layout:** project files at workspace root (no `PortalComponent/` folder, no `Citrix/` legacy reference — both removed). `Program.cs`, `PortalComponent.csproj`, `Models/`, `Pages/`, `Properties/`, `wwwroot/`, `appsettings.json` directly at root.
+**Layout:** project files at workspace root (no `PortalComponent/` folder, no `Citrix/` legacy reference — both removed). `Program.cs`, `CitrixComponent.csproj`, `Models/`, `Pages/`, `Properties/`, `wwwroot/`, `appsettings.json` directly at root.
 
 **Branches:**
 - Local workspace: `citrix-poc` (development).

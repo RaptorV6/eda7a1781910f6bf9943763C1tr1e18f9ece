@@ -151,7 +151,7 @@ Stripping the trailing slash.
 ## 2026-05-06 — No test project exists
 
 Fact:
-There is no `*.Tests.csproj`, no xUnit/NUnit/MSTest setup, and no test runner configured. `PortalComponent.sln` contains only the web project.
+There is no `*.Tests.csproj`, no xUnit/NUnit/MSTest setup, and no test runner configured. `CitrixComponent.sln` contains only the web project.
 
 Why it matters:
 Do not invent `dotnet test` commands or invent test files. Verification is currently UI-driven via the Razor Pages diagnostic page.

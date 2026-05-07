@@ -7,7 +7,7 @@ ASP.NET Core 10 portal that authenticates against Citrix StoreFront server-side,
 
 ```
 .
-├── PortalComponent.csproj      # net10.0, Razor Pages + minimal APIs
+├── CitrixComponent.csproj      # net10.0, Razor Pages + minimal APIs
 ├── Program.cs                  # *** main entry point — all endpoints + helpers ***
 ├── appsettings.json            # CitrixDiagnostics:BaseUrl, PublicGatewayHost, BodyPreviewLimit, etc.
 ├── appsettings.Development.json

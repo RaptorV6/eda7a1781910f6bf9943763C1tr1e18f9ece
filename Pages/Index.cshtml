@@ -726,7 +726,7 @@
                 if (window.location.origin !== new URL(normalizedBaseUrl).origin) {
                     log.warn(
                         stepName,
-                        'PortalComponent běží na jiném originu než Citrix StoreFront. Browser requesty proto narážejí na CORS/SameSite. Pro skutečné načtení aplikací je potřeba same-origin hostování nebo serverový login/proxy.'
+                        'CitrixComponent běží na jiném originu než Citrix StoreFront. Browser requesty proto narážejí na CORS/SameSite. Pro skutečné načtení aplikací je potřeba same-origin hostování nebo serverový login/proxy.'
                     );
                 }
             };
@@ -1073,7 +1073,7 @@
 
                 const httpsHeaderValue = normalizedBaseUrl.startsWith('https://') ? 'Yes' : 'No';
                 log.info('Init', `X-Citrix-IsUsingHTTPS bude odeslán s hodnotou "${httpsHeaderValue}".`);
-                log.info('Init', 'PortalComponent teď čeká na ručně odeslaný explicit login formulář. Browser už nezkouší přímé cross-origin fetch requesty do Citrixu.');
+                log.info('Init', 'CitrixComponent teď čeká na ručně odeslaný explicit login formulář. Browser už nezkouší přímé cross-origin fetch requesty do Citrixu.');
 
                 if (loginFormElement) {
                     loginFormElement.addEventListener('submit', handleLoginSubmit);

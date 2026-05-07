@@ -1,6 +1,6 @@
 using System.Text.Json;
 
-namespace PortalComponent.Models;
+namespace CitrixComponent.Models;
 
 public sealed class CitrixLoginResponse
 {

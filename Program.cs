@@ -1,5 +1,5 @@
 using Microsoft.Extensions.Caching.Memory;
-using PortalComponent.Models;
+using CitrixComponent.Models;
 using System.Net;
 using System.Net.Http.Headers;
 using System.Text;

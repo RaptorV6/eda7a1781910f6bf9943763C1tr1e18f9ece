@@ -23,7 +23,7 @@ Project conventions Claude must follow.
 
 ## Testing style
 
-- No test project yet. If/when added, prefer **xUnit** unless the user prefers otherwise. Place under `PortalComponent.Tests/` and add to the `.sln`.
+- No test project yet. If/when added, prefer **xUnit** unless the user prefers otherwise. Place under `CitrixComponent.Tests/` and add to the `.sln`.
 - Do not use mocks for the StoreFront proxy logic — the value is in the real bootstrap dance. Prefer recorded HAR-driven integration tests against a stub server.
 
 ## Commit / change style

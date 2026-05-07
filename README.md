@@ -123,7 +123,7 @@ rm -rf ./publish
 dotnet publish -c Release -o ./publish
 ```
 
-Obsah `./publish/` zkopírovat na deployment server, spustit přes Kestrel (`dotnet PortalComponent.dll`) nebo IIS.
+Obsah `./publish/` zkopírovat na deployment server, spustit přes Kestrel (`dotnet CitrixComponent.dll`) nebo IIS.
 
 Konfigurace lze přepsat environment proměnnými: `CitrixDiagnostics__BaseUrl=...`, `CitrixDiagnostics__PublicGatewayHost=...`, atd.
 
@@ -213,7 +213,7 @@ Detaily v [`docs/code-audit.md`](docs/code-audit.md). Hlavní body:
 ```
 .
 ├── README.md                       Tato dokumentace
-├── PortalComponent.csproj          .NET 10 SDK projekt, žádné externí NuGet
+├── CitrixComponent.csproj          .NET 10 SDK projekt, žádné externí NuGet
 ├── Program.cs                      Veškerá runtime logika (endpoints + helpers)
 ├── appsettings.json                Runtime konfigurace
 ├── Models/                         Request/response DTOs

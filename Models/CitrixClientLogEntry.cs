@@ -1,4 +1,4 @@
-namespace PortalComponent.Models;
+namespace CitrixComponent.Models;
 
 public sealed class CitrixClientLogEntry
 {

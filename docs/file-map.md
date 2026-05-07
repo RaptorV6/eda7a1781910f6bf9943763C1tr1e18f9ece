@@ -8,7 +8,7 @@ Přehled struktury repa pro budoucí úpravy. Pokud chceš změnit X, kouni do Y
 |-------|-----------|--------------|
 | `README.md` | High-level dokumentace projektu pro 3 publika (PM, junior dev, chatbot) | Při větších změnách scope nebo statusu |
 | `.gitignore` | Standardní .NET ignore patterns + ochrana proti commitu HAR souborů a local config overrides | Pokud přidáš nový build artefakt který se nemá commitovat |
-| `PortalComponent.csproj` | .NET 10 SDK projekt, žádné NuGet závislosti (vše ze shared frameworku) | Při přidání NuGet balíčku |
+| `CitrixComponent.csproj` | .NET 10 SDK projekt, žádné NuGet závislosti (vše ze shared frameworku) | Při přidání NuGet balíčku |
 | `Program.cs` | **Vše hlavní** — service registration, middleware pipeline, 5 endpoint handlerů, helper třídy | Většina backend změn |
 | `appsettings.json` | Runtime konfigurace — Citrix hostnames, gateway, panel title | Při změně cílového Citrixu |
 | `appsettings.Development.json` | Development override (verbose logging) | Lokální dev tweaks |
@@ -101,6 +101,6 @@ rm -rf ./publish
 dotnet publish -c Release -o ./publish
 ```
 
-Po publish zkopíruj obsah `./publish/` na deploy server, spusť `dotnet PortalComponent.dll` nebo hostuj přes IIS.
+Po publish zkopíruj obsah `./publish/` na deploy server, spusť `dotnet CitrixComponent.dll` nebo hostuj přes IIS.
 
 Konfigurace přes `appsettings.json` ve výsledné `./publish/` složce (ne ze zdroje), nebo přes environment variables (`CitrixDiagnostics__BaseUrl=...`).

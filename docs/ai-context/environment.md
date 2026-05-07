@@ -2,7 +2,7 @@
 
 ## Runtime / platform
 
-- **Active app:** ASP.NET Core 10.0 (`net10.0`), nullable + implicit usings on (`PortalComponent.csproj`).
+- **Active app:** ASP.NET Core 10.0 (`net10.0`), nullable + implicit usings on (`CitrixComponent.csproj`).
 - **Razor Pages + minimal API endpoints**, single `Program.cs` (top-level statements).
 - **HTTPS redirection + HSTS** on in non-Development environments (`Program.cs::UseHsts`/`UseHttpsRedirection`).
 - **Static assets** served via `MapStaticAssets` (.NET 10 feature) and `WithStaticAssets`.

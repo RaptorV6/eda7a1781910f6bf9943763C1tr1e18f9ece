@@ -7,7 +7,7 @@ Verified commands for this project. Do not add commands here unless they have be
 ## Build
 
 ```bash
-dotnet build PortalComponent.csproj
+dotnet build CitrixComponent.csproj
 ```
 
 Result/notes:
@@ -31,14 +31,14 @@ Result/notes:
 
 ## Test
 
-There is **no test project**. Do not run `dotnet test`. To add tests, propose creating a sibling `PortalComponent.Tests/` directory with xUnit (or whatever the user prefers).
+There is **no test project**. Do not run `dotnet test`. To add tests, propose creating a sibling `CitrixComponent.Tests/` directory with xUnit (or whatever the user prefers).
 
 ---
 
 ## Lint / format
 
 ```bash
-dotnet format PortalComponent.csproj
+dotnet format CitrixComponent.csproj
 ```
 
 Result/notes:
@@ -61,7 +61,7 @@ Result/notes:
 ## Restore
 
 ```bash
-dotnet restore PortalComponent.csproj
+dotnet restore CitrixComponent.csproj
 ```
 
 Result/notes:

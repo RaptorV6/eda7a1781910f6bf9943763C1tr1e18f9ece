@@ -4,7 +4,7 @@ using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using System.Diagnostics;
 
-namespace PortalComponent.Pages;
+namespace CitrixComponent.Pages;
 
 public class IndexModel : PageModel
 {

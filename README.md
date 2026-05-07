@@ -2,8 +2,6 @@
 
 Reusable ASP.NET Core 10 komponenta pro integraci Citrix StoreFrontu do libovolné hostitelské aplikace. Uživatel se přihlásí, vidí seznam jemu přidělených Citrix aplikací jako dlaždice a klikem některou spustí v Citrix Workspace App. Veškerá komunikace s Citrix StoreFrontem probíhá server-side; prohlížeč nikdy nedostane přímý přístup ke Citrix endpointům ani jeho session cookies.
 
-> **Není to portál ani okleštěná verze Citrixu.** Je to komponenta — server-side proxy vrstva která hovoří protokolem StoreFront API a překládá ho do vlastního UI. Jde embedovat do jakékoli hostitelské .NET webové aplikace.
-
 ## Jak to funguje
 
 ### Kontext: co je StoreFront a proč to děláme takhle

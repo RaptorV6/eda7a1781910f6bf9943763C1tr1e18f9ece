@@ -4,6 +4,22 @@ Durable project-specific facts Claude must remember.
 
 ---
 
+## 2026-05-07 — This is a COMPONENT, not a portal
+
+Fact:
+`CitrixComponent` is a **reusable Citrix component** meant to be embedded in a host application. It is NOT a standalone portal or "firemní portál". Never call it "portál".
+
+Why it matters:
+User explicitly corrected this. Calling it a portal misrepresents what it is and confuses stakeholders.
+
+Do this:
+Call it "Citrix komponenta", "CitrixComponent", or "the component".
+
+Avoid:
+"portál", "portal", "firemní portál", "Citrix portál" — all wrong.
+
+---
+
 ## 2026-05-06 — Two stacks coexist: repo root (.NET 10) is active, `Citrix/` is reference
 
 Fact:

@@ -997,10 +997,8 @@ app.MapGet("/api/citrix-sso/test", async (HttpContext ctx, IConfiguration config
         var currentUrl = storeUri;
         for (int hop = 0; hop < 8; hop++)
         {
-            using var req = new HttpRequestMessage(HttpMethod.Get, currentUrl);
-            req.Headers.Add("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8");
-            req.Headers.Add("Upgrade-Insecure-Requests", "1");
-            req.Headers.Add("User-Agent", "Mozilla/5.0");
+            using var req = CitrixExplicitAuth.CreateRequest(HttpMethod.Get, currentUrl,
+                CitrixExplicitAuth.CreatePageHeaders(storeUri));
             using var resp = await bootstrapClient.SendAsync(req);
 
             if (resp.StatusCode is System.Net.HttpStatusCode.Moved or System.Net.HttpStatusCode.Found or System.Net.HttpStatusCode.SeeOther)
@@ -1012,10 +1010,9 @@ app.MapGet("/api/citrix-sso/test", async (HttpContext ctx, IConfiguration config
             }
 
             var body = await resp.Content.ReadAsStringAsync();
-            var metaMatch = System.Text.RegularExpressions.Regex.Match(body, @"content=""\d+;\s*url=([^""]+)""", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
-            if (metaMatch.Success)
+            var metaUrl = CitrixExplicitAuth.TryExtractMetaRefreshUrl(body);
+            if (!string.IsNullOrWhiteSpace(metaUrl))
             {
-                var metaUrl = metaMatch.Groups[1].Value;
                 currentUrl = Uri.TryCreate(metaUrl, UriKind.Absolute, out var absUri) ? absUri : new Uri(storeUri, metaUrl);
                 continue;
             }

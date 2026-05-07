@@ -1028,13 +1028,14 @@ app.MapGet("/api/citrix-sso/test", async (HttpContext ctx, IConfiguration config
             var cookies = handler.CookieContainer.GetCookies(storeUri);
             var csrf = cookies.Cast<Cookie>().FirstOrDefault(c => c.Name.Equals("CsrfToken", StringComparison.OrdinalIgnoreCase))?.Value ?? "";
 
-            // Zkus Domain Pass-through login
-            using var dptReq = new HttpRequestMessage(HttpMethod.Get, new Uri(storeUri, "DomainPassthroughAuth/Login"));
+            // Zkus Domain Pass-through login (POST — GET vrací 404 jako ExplicitAuth/Login)
+            using var dptReq = new HttpRequestMessage(HttpMethod.Post, new Uri(storeUri, "DomainPassthroughAuth/Login"));
             dptReq.Headers.Add("Accept", "application/xml, text/xml, */*");
             dptReq.Headers.Add("X-Requested-With", "XMLHttpRequest");
             dptReq.Headers.Add("X-Citrix-IsUsingHTTPS", storeUri.Scheme == "https" ? "Yes" : "No");
             if (!string.IsNullOrEmpty(csrf)) dptReq.Headers.Add("Csrf-Token", csrf);
             dptReq.Headers.Add("Referer", storeUri.ToString());
+            dptReq.Content = new StringContent("", Encoding.UTF8, "application/x-www-form-urlencoded");
 
             using var dptResp = await client.SendAsync(dptReq);
             var dptBody = await dptResp.Content.ReadAsStringAsync();

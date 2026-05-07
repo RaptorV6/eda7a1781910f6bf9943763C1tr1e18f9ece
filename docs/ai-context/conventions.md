@@ -28,9 +28,16 @@ Project conventions Claude must follow.
 
 ## Commit / change style
 
-- Recent commits are unlabelled progress markers (`9`, `10`, `11`, `12`, `13`). The user has not asked for Conventional Commits or anything fancier — match the existing terse style unless the user requests otherwise.
-- Do not commit `bin/`, `obj/`, `publish/` artefacts in new commits even though some are already tracked.
-- Branch in flight: `citrix-poc`. Do not push or merge without explicit user instruction.
+- **Conventional Commits** (https://www.conventionalcommits.org/en/v1.0.0/) — povinný formát pro všechny commity.
+  - `feat:` nová funkce
+  - `fix:` oprava bugu
+  - `refactor:` refactor bez změny chování
+  - `chore:` build, deps, config, docs
+  - `docs:` pouze dokumentace
+  - Příklad: `feat: add SSO endpoint with Kerberos delegation`
+  - Breaking change: `feat!:` nebo `BREAKING CHANGE:` v footer
+- Do not commit `bin/`, `obj/`, `publish/` artefacts.
+- Active branch: `main` (citrix-poc force-pushed to main 2026-05-07). Do not push or merge without explicit user instruction.
 
 ## User / project preferences
 

@@ -1022,8 +1022,11 @@ app.MapGet("/api/citrix-sso/test", async (HttpContext ctx, IConfiguration config
             break;
         }
 
-        var bootstrapCookies = sharedCookies.GetCookies(storeUri);
-        var csrf = bootstrapCookies.Cast<Cookie>().FirstOrDefault(c => c.Name.Equals("CsrfToken", StringComparison.OrdinalIgnoreCase))?.Value ?? "";
+        // Hledej cookies na všech možných cestách
+        var checkUris = new[] { storeUri, new Uri(storeUri, "/Citrix/FISWeb/"), new Uri(storeUri, "/"), new Uri($"{storeUri.Scheme}://{storeUri.Host}/") };
+        var allCookies = checkUris.SelectMany(u => sharedCookies.GetCookies(u).Cast<Cookie>()).DistinctBy(c => c.Name).ToList();
+        var csrf = allCookies.FirstOrDefault(c => c.Name.Equals("CsrfToken", StringComparison.OrdinalIgnoreCase))?.Value ?? "";
+        var cookieNames = string.Join(", ", allCookies.Select(c => c.Name));
 
         // DomainPassthrough s credentials (impersonace uživatele)
         authMethodsResult = await WindowsIdentity.RunImpersonatedAsync(windowsIdentity.AccessToken, async () =>
@@ -1050,7 +1053,7 @@ app.MapGet("/api/citrix-sso/test", async (HttpContext ctx, IConfiguration config
             var dptBody = await dptResp.Content.ReadAsStringAsync();
             var dptPreview = dptBody.Length > 800 ? dptBody[..800] + "..." : dptBody;
             var wwwAuth = dptResp.Headers.WwwAuthenticate.ToString();
-            return $"DomainPassthroughAuth/Login → {(int)dptResp.StatusCode} | csrf={!string.IsNullOrEmpty(csrf)} | WWW-Auth: {wwwAuth} | Body: {dptPreview}";
+            return $"DomainPassthroughAuth/Login → {(int)dptResp.StatusCode} | csrf={!string.IsNullOrEmpty(csrf)} | cookies=[{cookieNames}] | WWW-Auth: {wwwAuth} | Body: {dptPreview}";
         });
     }
     catch (Exception ex)

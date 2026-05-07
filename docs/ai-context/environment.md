@@ -20,7 +20,9 @@
 
 ## Deployment constraints
 
-- Target deployment story is **not yet decided** (IIS, Kestrel, container?). HSTS / HTTPS-redirect choices depend on this.
+- **Deployment workflow:** Codespaces (dev) → `dotnet publish` locally → kopie publish výstupu na server.
+- **Deployment server:** domain-joined Windows, doména `fis.acr`. IIS nainstalovaný + Web-Windows-Auth modul přítomen. RDP přístup s admin právy.
+- **Uživatelské domény:** acr (primární), fis, oeis a případně další — vyžaduje cross-domain trust v AD + všechny domény v StoreFront Trusted Domains.
 - `appsettings.json::CitrixDiagnostics:BaseUrl` is hard-coded to `https://citrixvpx01.fis.acr/Citrix/FISWeb/`. Make it environment-configurable before deploying anywhere else.
 
 ## Known differences from defaults

@@ -1,7 +1,9 @@
+using Microsoft.AspNetCore.Server.IISIntegration;
 using Microsoft.Extensions.Caching.Memory;
 using CitrixComponent.Models;
 using System.Net;
 using System.Net.Http.Headers;
+using System.Security.Principal;
 using System.Text;
 using System.Text.Json;
 using System.Xml.Linq;
@@ -12,6 +14,8 @@ var builder = WebApplication.CreateBuilder(args);
 builder.Services.AddRazorPages();
 builder.Services.AddMemoryCache();
 builder.Services.AddSingleton<CitrixSessionCache>();
+builder.Services.AddAuthentication(IISDefaults.AuthenticationScheme);
+builder.Services.AddAuthorization();
 
 var app = builder.Build();
 
@@ -27,6 +31,7 @@ app.UseHttpsRedirection();
 
 app.UseRouting();
 
+app.UseAuthentication();
 app.UseAuthorization();
 
 app.MapStaticAssets();
@@ -952,6 +957,64 @@ app.MapPost("/api/citrix-diagnostics/explicit-login", async (
             InnerErrorMessage = exception.InnerException?.Message ?? string.Empty
         });
     }
+});
+
+app.MapGet("/api/whoami", (HttpContext ctx) => Results.Ok(new
+{
+    authenticated = ctx.User.Identity?.IsAuthenticated ?? false,
+    name = ctx.User.Identity?.Name ?? "anonymous",
+    authType = ctx.User.Identity?.AuthenticationType ?? "none"
+}));
+
+app.MapGet("/api/citrix-sso/test", async (HttpContext ctx, IConfiguration config, ILoggerFactory loggerFactory) =>
+{
+    var logger = loggerFactory.CreateLogger("CitrixSsoTest");
+    var storeRootUrl = config["CitrixDiagnostics:BaseUrl"] ?? "";
+
+    if (ctx.User.Identity is not WindowsIdentity windowsIdentity || !windowsIdentity.IsAuthenticated)
+    {
+        return Results.Ok(new { ssoResult = "FAIL", reason = "Windows identita není dostupná — IIS Windows Auth nefunguje nebo app pool nemá správný účet." });
+    }
+
+    var userName = windowsIdentity.Name;
+    logger.LogInformation("CitrixSsoTest: user={User}, storeRoot={StoreRoot}", userName, storeRootUrl);
+
+    string storeFrontResult;
+    try
+    {
+        storeFrontResult = await WindowsIdentity.RunImpersonatedAsync(windowsIdentity.AccessToken, async () =>
+        {
+            using var handler = new HttpClientHandler
+            {
+                UseDefaultCredentials = true,
+                AllowAutoRedirect = false,
+                AutomaticDecompression = DecompressionMethods.All
+            };
+            using var client = new HttpClient(handler) { Timeout = TimeSpan.FromSeconds(10) };
+            try
+            {
+                var resp = await client.GetAsync(storeRootUrl);
+                var body = await resp.Content.ReadAsStringAsync();
+                var preview = body.Length > 300 ? body[..300] + "..." : body;
+                return $"{(int)resp.StatusCode} {resp.StatusCode} | {preview}";
+            }
+            catch (Exception ex)
+            {
+                return $"HttpClient error: {ex.Message}";
+            }
+        });
+    }
+    catch (Exception ex)
+    {
+        storeFrontResult = $"Impersonation error: {ex.Message}";
+    }
+
+    return Results.Ok(new
+    {
+        ssoResult = "tested",
+        windowsUser = userName,
+        storeFrontResponse = storeFrontResult
+    });
 });
 
 app.MapRazorPages()

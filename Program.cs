@@ -1248,10 +1248,9 @@ internal sealed class CitrixSessionEntry
     public required DateTimeOffset CreatedAt { get; init; }
 }
 
-internal sealed class CitrixSessionCache(IMemoryCache cache)
+internal sealed class CitrixSessionCache(IMemoryCache cache, IConfiguration config)
 {
-    // StoreFront default session timeout is 20 min idle. SlidingExpiration keeps it alive while user clicks.
-    private static readonly TimeSpan SessionTtl = TimeSpan.FromMinutes(20);
+    private readonly TimeSpan SessionTtl = TimeSpan.FromMinutes(config.GetValue("SessionCacheMinutes", 20));
 
     public string Store(CitrixSessionEntry entry)
     {

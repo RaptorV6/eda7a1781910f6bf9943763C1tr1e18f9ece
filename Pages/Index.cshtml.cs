@@ -38,6 +38,8 @@ public class IndexModel : PageModel
 
     public string ServerLoginEndpoint { get; private set; } = "/api/citrix-diagnostics/explicit-login";
 
+    public string ServerSsoEndpoint { get; private set; } = "/api/citrix-sso/login";
+
     public string LaunchStatusEndpoint { get; private set; } = "/api/citrix-launch-status";
 
     public string ProxyEndpoint { get; private set; } = "/api/citrix-proxy";

@@ -959,6 +959,241 @@ app.MapPost("/api/citrix-diagnostics/explicit-login", async (
     }
 });
 
+app.MapPost("/api/citrix-sso/login", async (
+    HttpContext httpContext,
+    IConfiguration config,
+    ILoggerFactory loggerFactory,
+    CitrixSessionCache sessionCache,
+    CancellationToken cancellationToken) =>
+{
+    var logger = loggerFactory.CreateLogger("CitrixSsoLogin");
+
+    if (httpContext.User.Identity is not WindowsIdentity windowsIdentity || !windowsIdentity.IsAuthenticated)
+    {
+        return Results.Ok(new CitrixLoginResponse
+        {
+            Ok = false,
+            ErrorType = "WindowsAuthUnavailable",
+            ErrorMessage = "Windows identita není dostupná — IIS Windows Authentication není povolena nebo uživatel není autentizován."
+        });
+    }
+
+    var storeRootUrl = config["CitrixDiagnostics:BaseUrl"] ?? string.Empty;
+    if (!Uri.TryCreate(storeRootUrl, UriKind.Absolute, out var storeRootUri))
+    {
+        return Results.Ok(new CitrixLoginResponse
+        {
+            Ok = false,
+            ErrorType = "InvalidStoreRootUrl",
+            ErrorMessage = $"CitrixDiagnostics:BaseUrl není validní URI: {storeRootUrl}"
+        });
+    }
+
+    var requestId = Guid.NewGuid().ToString("N")[..12];
+    var forwardedAcceptLanguage = httpContext.Request.Headers.AcceptLanguage.ToString();
+    var forwardedUserAgent = httpContext.Request.Headers.UserAgent.ToString();
+    var httpsHeaderValue = string.Equals(storeRootUri.Scheme, Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase) ? "Yes" : "No";
+
+    logger.LogInformation(
+        "Citrix SSO login started. RequestId: {RequestId}. WindowsUser: {WindowsUser}. ImpersonationLevel: {ImpersonationLevel}. StoreRootUrl: {StoreRootUrl}",
+        requestId, windowsIdentity.Name, windowsIdentity.ImpersonationLevel, storeRootUri);
+
+    var cookies = new CookieContainer();
+    var authMethodsUri = new Uri(storeRootUri, "Authentication/GetAuthMethods");
+    var dptUri = new Uri(storeRootUri, "DomainPassthroughAuth/Login");
+    var resourcesUri = new Uri(storeRootUri, "Resources/List");
+
+    HttpStatusCode? bootstrapStatusCode = null;
+    HttpStatusCode? authMethodsStatusCode = null;
+    HttpStatusCode? loginSubmitStatusCode = null;
+    HttpStatusCode? resourcesStatusCode = null;
+    string bootstrapFinalUrl = storeRootUri.ToString();
+    string authMethodsPreview = string.Empty;
+    string loginSubmitPreview = string.Empty;
+    string resourcesPreview = string.Empty;
+    string authResult = string.Empty;
+
+    try
+    {
+        // Step 1+2: Bootstrap + GetAuthMethods — anonymous, just need CsrfToken + ASP.NET session
+        using (var anonHandler = new HttpClientHandler
+        {
+            AllowAutoRedirect = false,
+            UseCookies = true,
+            CookieContainer = cookies,
+            AutomaticDecompression = DecompressionMethods.All
+        })
+        using (var anonClient = new HttpClient(anonHandler) { Timeout = TimeSpan.FromSeconds(30) })
+        {
+            using var bootstrapReq = CitrixExplicitAuth.CreateRequest(
+                HttpMethod.Get, storeRootUri,
+                CitrixExplicitAuth.CreatePageHeaders(storeRootUri, forwardedAcceptLanguage, forwardedUserAgent));
+            using var bootstrapResp = await anonClient.SendAsync(bootstrapReq, cancellationToken);
+            bootstrapStatusCode = bootstrapResp.StatusCode;
+            bootstrapFinalUrl = bootstrapResp.RequestMessage?.RequestUri?.ToString() ?? storeRootUri.ToString();
+            _ = await bootstrapResp.Content.ReadAsStringAsync(cancellationToken);
+
+            var amHeaders = CitrixExplicitAuth.CreateBaseHeaders(storeRootUri, authMethodsUri, httpsHeaderValue, acceptLanguage: forwardedAcceptLanguage, userAgent: forwardedUserAgent);
+            amHeaders["X-Citrix-AM-CredentialTypes"] = CitrixExplicitAuth.FormCredentialTypes;
+            amHeaders["X-Citrix-AM-LabelTypes"] = CitrixExplicitAuth.FormLabelTypes;
+            using var amReq = CitrixExplicitAuth.CreateRequest(HttpMethod.Post, authMethodsUri, amHeaders, string.Empty, "application/x-www-form-urlencoded; charset=UTF-8");
+            using var amResp = await anonClient.SendAsync(amReq, cancellationToken);
+            authMethodsStatusCode = amResp.StatusCode;
+            authMethodsPreview = CitrixExplicitAuth.Preview(await amResp.Content.ReadAsStringAsync(cancellationToken));
+        }
+
+        var csrf = CitrixExplicitAuth.GetCookieValue(cookies, storeRootUri, "CsrfToken");
+        if (string.IsNullOrWhiteSpace(csrf))
+        {
+            return Results.Ok(new CitrixLoginResponse
+            {
+                Ok = false,
+                RequestId = requestId,
+                BootstrapStatusCode = bootstrapStatusCode is null ? null : (int)bootstrapStatusCode.Value,
+                AuthMethodsStatusCode = authMethodsStatusCode is null ? null : (int)authMethodsStatusCode.Value,
+                BootstrapFinalUrl = bootstrapFinalUrl,
+                AuthMethodsPreview = authMethodsPreview,
+                CookieNames = CitrixExplicitAuth.GetCookieNames(cookies, storeRootUri),
+                CsrfTokenFound = false,
+                ErrorType = "CsrfTokenMissing",
+                ErrorMessage = "Po bootstrapu nebyl nalezen CsrfToken — StoreFront pravděpodobně nevytvoří session."
+            });
+        }
+
+        // Step 3: DomainPassthroughAuth/Login — runs under user impersonation with UseDefaultCredentials
+        await WindowsIdentity.RunImpersonatedAsync(windowsIdentity.AccessToken, async () =>
+        {
+            using var authHandler = new HttpClientHandler
+            {
+                UseDefaultCredentials = true,
+                UseProxy = false,
+                AllowAutoRedirect = false,
+                UseCookies = true,
+                CookieContainer = cookies,
+                AutomaticDecompression = DecompressionMethods.All
+            };
+            using var authClient = new HttpClient(authHandler) { Timeout = TimeSpan.FromSeconds(30) };
+
+            var dptHeaders = CitrixExplicitAuth.CreateBaseHeaders(storeRootUri, dptUri, httpsHeaderValue, csrf, forwardedAcceptLanguage, forwardedUserAgent);
+            using var dptReq = CitrixExplicitAuth.CreateRequest(HttpMethod.Post, dptUri, dptHeaders, string.Empty, "application/x-www-form-urlencoded; charset=UTF-8");
+            using var dptResp = await authClient.SendAsync(dptReq, cancellationToken);
+            loginSubmitStatusCode = dptResp.StatusCode;
+            var dptBody = await dptResp.Content.ReadAsStringAsync(cancellationToken);
+            loginSubmitPreview = CitrixExplicitAuth.Preview(dptBody);
+            authResult = CitrixExplicitAuth.FindElementValue(dptBody, "Result") ?? string.Empty;
+
+            logger.LogInformation(
+                "Citrix SSO DomainPassthroughAuth result. RequestId: {RequestId}. StatusCode: {StatusCode}. AuthResult: {AuthResult}. ImpersonationLevel: {ImpersonationLevel}",
+                requestId, (int)dptResp.StatusCode, authResult, WindowsIdentity.GetCurrent().ImpersonationLevel);
+        });
+
+        var updatedCsrf = CitrixExplicitAuth.GetCookieValue(cookies, storeRootUri, "CsrfToken") ?? csrf;
+
+        if (!string.Equals(authResult, "success", StringComparison.OrdinalIgnoreCase))
+        {
+            return Results.Ok(new CitrixLoginResponse
+            {
+                Ok = true,
+                RequestId = requestId,
+                LoginSucceeded = false,
+                Message = "DomainPassthroughAuth nevrátil success. Zkontrolujte Kerberos delegaci (RBCD) a Windows Authentication na IIS.",
+                AuthResult = authResult,
+                BootstrapStatusCode = bootstrapStatusCode is null ? null : (int)bootstrapStatusCode.Value,
+                AuthMethodsStatusCode = authMethodsStatusCode is null ? null : (int)authMethodsStatusCode.Value,
+                LoginSubmitStatusCode = loginSubmitStatusCode is null ? null : (int)loginSubmitStatusCode.Value,
+                BootstrapFinalUrl = bootstrapFinalUrl,
+                LoginPostUrl = dptUri.ToString(),
+                CookieNames = CitrixExplicitAuth.GetCookieNames(cookies, storeRootUri),
+                CsrfTokenFound = !string.IsNullOrWhiteSpace(updatedCsrf),
+                AuthMethodsPreview = authMethodsPreview,
+                LoginSubmitPreview = loginSubmitPreview
+            });
+        }
+
+        // Step 4: Resources/List — session cookies are sufficient, no Kerberos needed
+        using (var resHandler = new HttpClientHandler
+        {
+            AllowAutoRedirect = false,
+            UseCookies = true,
+            CookieContainer = cookies,
+            AutomaticDecompression = DecompressionMethods.All
+        })
+        using (var resClient = new HttpClient(resHandler) { Timeout = TimeSpan.FromSeconds(30) })
+        {
+            var resHeaders = CitrixExplicitAuth.CreateBaseHeaders(storeRootUri, resourcesUri, httpsHeaderValue, updatedCsrf, forwardedAcceptLanguage, forwardedUserAgent);
+            using var resReq = CitrixExplicitAuth.CreateRequest(HttpMethod.Post, resourcesUri, resHeaders, "format=json&resourceDetails=Default", "application/x-www-form-urlencoded; charset=UTF-8");
+            using var resResp = await resClient.SendAsync(resReq, cancellationToken);
+            resourcesStatusCode = resResp.StatusCode;
+            var resBody = await resResp.Content.ReadAsStringAsync(cancellationToken);
+            resourcesPreview = CitrixExplicitAuth.Preview(resBody);
+            var resourcesPayload = CitrixExplicitAuth.TryParseJson(resBody);
+
+            var sessionToken = sessionCache.Store(new CitrixSessionEntry
+            {
+                Cookies = cookies,
+                StoreRootUri = storeRootUri,
+                CreatedAt = DateTimeOffset.UtcNow
+            });
+
+            logger.LogInformation(
+                "Citrix SSO login succeeded. RequestId: {RequestId}. SessionToken: {SessionToken}. WindowsUser: {WindowsUser}",
+                requestId, sessionToken, windowsIdentity.Name);
+
+            return Results.Ok(new CitrixLoginResponse
+            {
+                Ok = true,
+                RequestId = requestId,
+                LoginSucceeded = true,
+                Message = "SSO přihlášení přes DomainPassthroughAuth proběhlo úspěšně.",
+                SessionToken = sessionToken,
+                AuthResult = authResult,
+                BootstrapStatusCode = bootstrapStatusCode is null ? null : (int)bootstrapStatusCode.Value,
+                AuthMethodsStatusCode = authMethodsStatusCode is null ? null : (int)authMethodsStatusCode.Value,
+                LoginSubmitStatusCode = loginSubmitStatusCode is null ? null : (int)loginSubmitStatusCode.Value,
+                ResourcesStatusCode = resourcesStatusCode is null ? null : (int)resourcesStatusCode.Value,
+                BootstrapFinalUrl = bootstrapFinalUrl,
+                LoginPostUrl = dptUri.ToString(),
+                ResourcesUrl = resourcesUri.ToString(),
+                CookieNames = CitrixExplicitAuth.GetCookieNames(cookies, storeRootUri),
+                CsrfTokenFound = !string.IsNullOrWhiteSpace(CitrixExplicitAuth.GetCookieValue(cookies, storeRootUri, "CsrfToken")),
+                AuthMethodsPreview = authMethodsPreview,
+                LoginSubmitPreview = loginSubmitPreview,
+                ResourcesPreview = resourcesPreview,
+                ResourcesPayload = resourcesPayload
+            });
+        }
+    }
+    catch (Exception exception)
+    {
+        logger.LogError(
+            exception,
+            "Citrix SSO login failed. RequestId: {RequestId}. StoreRootUrl: {StoreRootUrl}. WindowsUser: {WindowsUser}",
+            requestId, storeRootUri, windowsIdentity.Name);
+
+        return Results.Ok(new CitrixLoginResponse
+        {
+            Ok = false,
+            RequestId = requestId,
+            AuthResult = authResult,
+            BootstrapStatusCode = bootstrapStatusCode is null ? null : (int)bootstrapStatusCode.Value,
+            AuthMethodsStatusCode = authMethodsStatusCode is null ? null : (int)authMethodsStatusCode.Value,
+            LoginSubmitStatusCode = loginSubmitStatusCode is null ? null : (int)loginSubmitStatusCode.Value,
+            ResourcesStatusCode = resourcesStatusCode is null ? null : (int)resourcesStatusCode.Value,
+            BootstrapFinalUrl = bootstrapFinalUrl,
+            LoginPostUrl = dptUri.ToString(),
+            ResourcesUrl = resourcesUri.ToString(),
+            AuthMethodsPreview = authMethodsPreview,
+            LoginSubmitPreview = loginSubmitPreview,
+            ResourcesPreview = resourcesPreview,
+            CookieNames = CitrixExplicitAuth.GetCookieNames(cookies, storeRootUri),
+            CsrfTokenFound = !string.IsNullOrWhiteSpace(CitrixExplicitAuth.GetCookieValue(cookies, storeRootUri, "CsrfToken")),
+            ErrorType = exception.GetType().FullName ?? exception.GetType().Name,
+            ErrorMessage = exception.Message,
+            InnerErrorMessage = exception.InnerException?.Message ?? string.Empty
+        });
+    }
+});
+
 app.MapGet("/api/whoami", (HttpContext ctx) => Results.Ok(new
 {
     authenticated = ctx.User.Identity?.IsAuthenticated ?? false,

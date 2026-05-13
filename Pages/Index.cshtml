@@ -340,6 +340,7 @@
      data-client-log-endpoint="@Model.ClientLogEndpoint"
      data-server-probe-endpoint="@Model.ServerProbeEndpoint"
      data-server-login-endpoint="@Model.ServerLoginEndpoint"
+     data-server-sso-endpoint="@Model.ServerSsoEndpoint"
      data-request-id="@Model.DiagnosticRequestId">
     <div class="mb-3">
         <h1 class="citrix-diagnostics-title">@Model.PanelTitle</h1>
@@ -547,6 +548,7 @@
             const clientLogEndpoint = root.dataset.clientLogEndpoint || '';
             const serverProbeEndpoint = root.dataset.serverProbeEndpoint || '';
             const serverLoginEndpoint = root.dataset.serverLoginEndpoint || '';
+            const serverSsoEndpoint = root.dataset.serverSsoEndpoint || '';
             const requestId = root.dataset.requestId || `client-${Date.now()}`;
             let clientLogSequence = 0;
 
@@ -1097,6 +1099,21 @@
                 logMultilineBlock('ExplicitLogin', 'Login submit preview', payload.loginSubmitPreview);
             };
 
+            const runSsoLogin = async () => {
+                if (!serverSsoEndpoint) return null;
+                const response = await fetch(serverSsoEndpoint, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ requestId })
+                });
+                const text = await response.text();
+                try {
+                    return JSON.parse(text);
+                } catch {
+                    throw new Error(`SSO endpoint vrátil nevalidní JSON: ${text.substring(0, 200)}`);
+                }
+            };
+
             const handleLoginSubmit = async (event) => {
                 event.preventDefault();
 
@@ -1191,6 +1208,7 @@
                 log.info('Init', `Client log endpoint: ${clientLogEndpoint || '(není nastaveno)'}`);
                 log.info('Init', `Server probe endpoint: ${serverProbeEndpoint || '(není nastaveno)'}`);
                 log.info('Init', `Server login endpoint: ${serverLoginEndpoint || '(není nastaveno)'}`);
+                log.info('Init', `Server SSO endpoint: ${serverSsoEndpoint || '(není nastaveno)'}`);
                 log.info('Init', `Browser origin: ${window.location.origin}`);
                 log.info('Init', `Citrix URL origin: ${normalizedBaseUrl ? new URL(normalizedBaseUrl).origin : '(není nastaveno)'}`);
 
@@ -1205,13 +1223,39 @@
                 log.info('Init', `X-Citrix-IsUsingHTTPS bude odeslán s hodnotou "${httpsHeaderValue}".`);
                 log.info('Init', 'CitrixComponent teď čeká na ručně odeslaný explicit login formulář. Browser už nezkouší přímé cross-origin fetch requesty do Citrixu.');
 
+                wireApiToolButtons();
+
+                if (serverSsoEndpoint) {
+                    setStatus('Probíhá automatické přihlášení (Windows SSO)…', 'info');
+                    log.info('SsoLogin', `Spouštím SSO přihlášení přes ${serverSsoEndpoint}`);
+                    try {
+                        const ssoPayload = await runSsoLogin();
+                        log.info('SsoLogin', `SSO výsledek: ok=${ssoPayload?.ok}, loginSucceeded=${ssoPayload?.loginSucceeded}, authResult=${ssoPayload?.authResult || '(prázdný)'}`);
+                        if (ssoPayload?.loginSucceeded) {
+                            const resources = extractResources(ssoPayload.resourcesPayload);
+                            if (resources?.length > 0) {
+                                renderApplications(resources, ssoPayload.sessionToken || '');
+                                setStatus(`Načteno ${resources.length} aplikací. Klik na dlaždici spustí ICA.`, 'success');
+                                log.info('SsoLogin', `SSO přihlášení úspěšné. Načteno ${resources.length} aplikací.`);
+                                return;
+                            }
+                        }
+                        const ssoErrorMsg = ssoPayload?.errorMessage || ssoPayload?.message || 'SSO nevrátilo úspěšné přihlášení.';
+                        log.warn('SsoLogin', `SSO selhalo: ${ssoErrorMsg}. Zobrazuji formulář pro ruční přihlášení.`);
+                        setStatus('Automatické přihlášení selhalo — zadejte přihlašovací údaje.', 'warn');
+                    } catch (ssoError) {
+                        const msg = ssoError instanceof Error ? ssoError.message : String(ssoError);
+                        log.warn('SsoLogin', `SSO výjimka: ${msg}. Zobrazuji formulář.`);
+                        setStatus('Automatické přihlášení selhalo — zadejte přihlašovací údaje.', 'warn');
+                    }
+                } else {
+                    setStatus('Vyplňte přihlášení a spusťte server-side Citrix login.', 'info');
+                }
+
                 if (loginFormElement) {
                     loginFormElement.addEventListener('submit', handleLoginSubmit);
                 }
 
-                wireApiToolButtons();
-
-                setStatus('Vyplňte přihlášení a spusťte server-side Citrix login.', 'info');
                 showEmptyState('Zatím nejsou načtené žádné aplikace. Přihlaste se přes formulář výše.');
             };
 

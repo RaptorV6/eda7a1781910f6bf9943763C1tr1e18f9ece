@@ -4,6 +4,33 @@ Durable project decisions that future Claude sessions must remember.
 
 ---
 
+## 2026-05-13 — Kerberos/RBCD/KCD přístup zamítnut, pivot na Gateway Pass-Through
+
+Status: accepted
+
+Decision:
+Kerberos Constrained Delegation (KCD/RBCD) se pro SSO nepoužije. Místo toho zkoumáme **NetScaler Gateway Pass-Through** (`/GatewayAuth/Login`).
+
+Reason:
+- `DomainPassthroughAuth/Login` vyžaduje reálný Kerberos/NTLM handshake na úrovni HTTP spojení — server-side `HttpClient` to bez RBCD v AD nedokáže. Výsledek je vždy `fatalerror`.
+- NTLM nejde delegovat (connection-oriented, single-hop).
+- RBCD nebylo nakonfigurováno za týden pokusů, AD admin nezasahoval.
+- Výzkum potvrdil: Gateway Pass-Through přes NetScaler (`/GatewayAuth/Login`) nevyžaduje žádné AD změny — StoreFront důvěřuje NetScaleru přímo.
+
+Alternatives considered:
+- KCD/RBCD — funguje ale vyžaduje AD změny které se nedaří prosadit.
+- NTLM — nelze delegovat.
+- FAS — netýká se StoreFront auth, pomáhá jen VDA launch.
+
+Consequences:
+Nenavrhovat Kerberos/RBCD/SPN cokoliv. Místo toho: zjistit konfiguraci Gateway Pass-Through na `pnagent.fis.acr` a implementovat `/GatewayAuth/Login` endpoint.
+
+Affected files/modules:
+- `Program.cs` (nový SSO endpoint)
+- `appsettings.json` (případná gateway konfigurace)
+
+---
+
 ## 2026-05-06 — Manual redirect handling for StoreFront bootstrap
 
 Status: accepted

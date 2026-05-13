@@ -144,23 +144,23 @@ Hard-coding only.
 
 ---
 
-## 2026-05-06 — `BaseUrl` for the POC target
+## 2026-05-13 — Infrastructure hostnames (corrected)
 
 Fact:
-`appsettings.json::CitrixDiagnostics:BaseUrl = https://citrixvpx01.fis.acr/Citrix/FISWeb/`. This is an **internal** hostname; it is unreachable outside the corporate network.
+- `pnagent.fis.acr` = **NetScaler Gateway** (veřejný přístup). Toto je `BaseUrl` v `appsettings.json` (`https://pnagent.fis.acr/Citrix/FISWeb/`).
+- `citrixvpx01.fis.acr` = **interní StoreFront server** (za NetScalerem). Komponenta k němu nepřistupuje přímo.
 
 Why it matters:
-- Anyone trying to run the POC from outside the network will see DNS failures, not a code bug.
-- The trailing slash matters for relative URI composition (`new Uri(storeRootUri, "ExplicitAuth/Login")`).
+Dřívější paměť měla `BaseUrl = citrixvpx01.fis.acr` — to bylo chybné. Všechny HTTP requesty jdou na `pnagent.fis.acr`.
 
 Applies to:
-Local dev runs, CI runs, anything that hits the StoreFront.
+`appsettings.json`, `Program.cs`, RBCD nastavení (pokud delegace bude potřeba, nastavuje se na `pnagent`, ne `citrixvpx01`).
 
 Do this:
-Keep the trailing slash. Make the URL configurable per environment if a non-corporate target is added.
+Používat `pnagent.fis.acr` jako BaseUrl. `citrixvpx01` zmiňovat jen jako interní StoreFront za bránou.
 
 Avoid:
-Stripping the trailing slash.
+Zaměňovat `pnagent` a `citrixvpx01`. Navrhovat RBCD/SPN na `citrixvpx01` dokud není jasné jak to infrastrukturně stojí.
 
 ---
 

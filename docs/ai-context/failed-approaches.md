@@ -138,6 +138,50 @@ Do not repeat:
 
 ---
 
+## 2026-05-13 — DomainPassthroughAuth/Login s Windows identitou uživatele
+
+Context:
+SSO — automatické přihlášení bez formuláře. Uživatel `ACR\VanD` je správně identifikován přes Windows Auth na portálu.
+
+Tried:
+POST `/DomainPassthroughAuth/Login` s Windows identitou přihlášeného uživatele (Negotiate/Kerberos).
+
+Observed failure:
+`<Result>fail</Result><LogMessage>fatalerror</LogMessage>` — StoreFront požadavek odmítl.
+
+Root cause:
+Double-hop problém: komponenta má Kerberos ticket pro sebe, ale bez RBCD (Resource-Based Constrained Delegation) v AD na `citrixvpx01` nemůže delegovat identitu uživatele dál na StoreFront. StoreFront dostane impersonation token bez práva delegace → fatalerror.
+
+Do instead:
+Čekat na mitmproxy traffic z Workspace App — zjistit jestli existuje alternativa bez RBCD. Alternativně: AD admin musí nastavit RBCD (`Set-ADComputer citrixvpx01 -PrincipalsAllowedToDelegateToAccount (Get-ADComputer VXXXX22FISXVI15)`).
+
+Do not repeat:
+Navrhovat DomainPassthroughAuth bez potvrzení že RBCD je nastaveno v AD. Navrhovat SPN/RBCD obecně dokud není mitmproxy traffic — bylo zkoušeno opakovaně bez výsledku.
+
+---
+
+## 2026-05-13 — SPN registrace pro `fis\app_zadosti`
+
+Context:
+Pokus o registraci SPN pro service account který by komponenta používala.
+
+Tried:
+`setspn -A HTTP/<portal-hostname> fis\app_zadosti`
+
+Observed failure:
+Error 8647 — SPN již existuje jinde v AD forest (duplikát).
+
+Root cause:
+SPN pro daný hostname je už přiřazen jinému účtu v doméně. AD neumožňuje duplicitní SPN.
+
+Do instead:
+AD admin musí nejdřív najít kde SPN existuje (`setspn -F -Q HTTP/<hostname>`) a buď SPN přesunout, nebo použít jiný hostname/service account.
+
+Do not repeat:
+Pokoušet se registrovat SPN bez ověření duplikátů. Předpokládat že SPN registrace bude čistá.
+
+---
+
 ## 2026-05-07 — Committing .sln alongside .csproj in repo root
 
 Context:

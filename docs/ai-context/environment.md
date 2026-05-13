@@ -18,6 +18,20 @@
 - `bin/` and `obj/` artefacts are currently tracked in git. Build will dirty the working tree. Do not stage these as part of unrelated commits.
 - `.codex` (zero-byte file at the repo root) is a marker — leave it alone.
 
+## 2026-05-13 — App pool runs as ApplicationPoolIdentity, NOT app_zadosti
+
+Lesson:
+The IIS app pool for CitrixComponent runs as **ApplicationPoolIdentity**, not as the service account `app_zadosti`. The machine account is `VXXXX22FISXVI15$`.
+
+Why it matters:
+SPN and RBCD must be registered against `VXXXX22FISXVI15$`, not `app_zadosti`. Assuming `app_zadosti` leads to wrong SPN/delegation troubleshooting.
+
+Do this:
+When checking SPNs or RBCD, look for `VXXXX22FISXVI15$` (machine account).
+
+Avoid:
+Assuming app pool identity is `app_zadosti` or any named service account.
+
 ## Deployment constraints
 
 - **Deployment workflow:** Codespaces (dev) → `dotnet publish` locally → kopie publish výstupu na server.

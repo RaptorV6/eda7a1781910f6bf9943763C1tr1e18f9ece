@@ -400,18 +400,17 @@
                 <strong>Žádný download `.ica` souboru, žádné okno se stahováním.</strong> Klik → aplikace. Stejný UX jako kdyby uživatel používal oficiální Citrix StoreFront.
             </p>
 
-            <h3>Přesný sled HTTP kroků při přihlášení (7 kroků)</h3>
+            <h3>Přesný sled HTTP kroků při přihlášení (5 kroků)</h3>
             <p>Portál odehrává celý tok jako "robotický prohlížeč". Po odeslání formuláře se na serveru stane toto:</p>
             <ol class="citrix-flow-steps">
-                <li><strong>Bootstrap GET</strong> <code>/Citrix/FISWeb/</code> s browser-like hlavičkami (bez <code>X-Requested-With</code>) → StoreFront odpoví <strong>302 redirect</strong></li>
-                <li>Sleduj redirect na <code>/cgi/setclient?wica</code> → <strong>200 HTML</strong> se značkou <code>&lt;meta http-equiv="refresh"&gt;</code> (ne HTTP redirect — proto musíme parsovat HTML)</li>
-                <li>Parsuj meta-refresh URL → GET <code>/Citrix/FISWeb</code> → 301 → <code>/Citrix/FISWeb/</code> → <strong>200 OK</strong>. StoreFront teď nastaví cookies <code>ASP.NET_SessionId</code> + <code>CsrfToken</code></li>
-                <li><strong>POST</strong> <code>/Authentication/GetAuthMethods</code> (bez Csrf-Token) → <strong>200 XML</strong> s dostupnými metodami přihlášení</li>
+                <li><strong>Bootstrap GET</strong> <code>pnagent.fis.acr/Citrix/FISWeb/</code> s browser-like hlavičkami (bez <code>X-Requested-With</code>) → přímá odpověď <strong>200 OK</strong>, StoreFront nastaví <code>ASP.NET_SessionId</code> + <code>CsrfToken</code></li>
+                <li><strong>POST</strong> <code>/Authentication/GetAuthMethods</code> → <strong>200 XML</strong> — StoreFront vrátí dostupné metody: <code>ExplicitForms</code>, <code>IntegratedWindows</code>, <code>CitrixAuth</code></li>
                 <li><strong>POST</strong> <code>/ExplicitAuth/Login</code> → <strong>200 XML</strong> s definicí formulářových polí (jméno, heslo, doména, text tlačítka)</li>
                 <li><strong>POST</strong> <code>/ExplicitAuth/LoginAttempt</code> s <code>username</code>, <code>password</code>, <code>domain</code>, <code>loginBtn=Přihlásit</code> + aktuálním <code>Csrf-Token</code> hlavičkou → <strong>200 XML</strong> s <code>&lt;Result&gt;success&lt;/Result&gt;</code></li>
                 <li><strong>POST</strong> <code>/Resources/List</code> s <code>format=json&amp;resourceDetails=Default</code> → <strong>200 JSON</strong> se seznamem aplikací uživatele</li>
             </ol>
             <p>Všechny cookies zůstávají na serveru. Prohlížeč dostane jen opaque GUID (session token), pod kterým si server cookies drží 20 minut (sliding TTL).</p>
+            <p class="citrix-info-hint" style="margin-top:0.5rem">Poznámka: Dřívější konfigurace používala <code>citrixgw01.fis.acr</code> (NetScaler gateway), kde bootstrap dělal 302 → <code>/cgi/setclient?wica</code> → meta-refresh loop (3 sub-kroky navíc). <code>pnagent.fis.acr</code> je přímý StoreFront — bez NetScaler, bez redirectů.</p>
 
             <h3>Proč jsme si byli jistí, že to funguje správně</h3>
             <p>
@@ -436,7 +435,7 @@
                     <strong>Bezpečnostní token (CSRF) se po každém kroku mění.</strong> Logické cache-ování token na začátku flow všechny další kroky rozbilo, protože server čekal nový token, ne starý.
                 </li>
                 <li>
-                    <strong>Internal vs public hostname.</strong> Náš server mluví s Citrixem na adrese <code>citrixvpx01.fis.acr</code> (interní firemní hostname). Citrix nám pak vrátí vstupenku, která říká "stáhni si ICA z citrixvpx01.fis.acr". Jenže <strong>uživatelův počítač na tu interní adresu nedosáhne</strong> — chodí přes veřejnou bránu <code>pnagent.fis.acr</code>. Bez přepsání té adresy v naší odpovědi by se vstupenka nedala použít. Tohle nás zdrželo nejvíc, protože všechno fungovalo až do okamžiku spuštění aplikace, pak Workspace App tiše selhal bez chybové hlášky.
+                    <strong>Internal vs public hostname.</strong> Citrix vrátí vstupenku, která říká "stáhni si ICA z <em>interního</em> hostname". Jenže <strong>uživatelův počítač na interní adresu nedosáhne</strong> — Workspace App chodí přes <code>pnagent.fis.acr</code>. Bez přepsání hostname v naší odpovědi by se vstupenka nedala použít. Tohle nás zdrželo nejvíc — všechno fungovalo až do kliknutí, pak Workspace App tiše selhal bez chybové hlášky. Řešení: <code>appsettings.json::CitrixDiagnostics:PublicGatewayHost = pnagent.fis.acr</code> — server přepíše URL ve vstupenec před odesláním klientovi.
                 </li>
                 <li>
                     <strong>Workspace App musí mít přidaný store.</strong> Když uživatel <code>receiver://...</code> link kliknul a Workspace App neměla náš Citrix přidaný jako "známý účet", taky tiše selhala. Po přidání store v UI Workspace App (Add Account → URL discovery) všechno fungovalo. Pro celofiremní nasazení se tohle dá pushnout přes GPO s parametrem MSI instalace.
@@ -445,13 +444,19 @@
 
             <h3>Co teď a co dál</h3>
             <p>
-                <strong>Hotovo:</strong> přihlášení, výpis aplikací, ikony, klik → spuštění aplikace v Workspace App. End-to-end funkční. Můžeš to dnes ukázat.
+                <strong>Hotovo:</strong> přihlášení, výpis aplikací, ikony, klik → spuštění aplikace v Workspace App. End-to-end funkční, provoz přes <code>pnagent.fis.acr</code> (přímý StoreFront, bez NetScaler).
             </p>
             <p>
                 <strong>V plánu pro ostrou verzi:</strong>
             </p>
             <ul>
-                <li><strong>Automatické přihlášení přes Active Directory</strong> — uživatel se nemusí přihlašovat ručně, portál pozná jeho Windows identitu a zalogguje ho do Citrixu na pozadí. Vyžaduje nastavení v AD (delegace pro servisní účet, pod kterým portál běží). Funkčnost portálu se tím nemění, jen se uživatel ušetří jednoho kroku.</li>
+                <li>
+                    <strong>Automatické přihlášení — dvě cesty:</strong>
+                    <ul style="margin-top:0.35rem">
+                        <li><strong>Credential storage</strong> — uživatel zadá heslo jednou, portál si ho uloží šifrovaně. Každý další příchod = tichý login na pozadí, uživatel vidí rovnou dlaždice. Funguje pro všechny uživatele (ACR i FIS).</li>
+                        <li><strong>Windows PassThrough (<code>DomainPassthroughAuth</code>)</strong> — portál na pozadí volá <code>pnagent.fis.acr/DomainPassthroughAuth/Login</code> s Windows identitou uživatele. Ten nikdy nezadá heslo. Vyžaduje Kerberos delegaci v AD (RBCD pro machine account serveru). Funguje pro FIS uživatele; ACR uživatelé potřebují změnu AD trustu.</li>
+                    </ul>
+                </li>
                 <li><strong>Refactor kódu</strong> — současný PoC má hodně logiky v jednom souboru pro přehlednost. V ostré verzi se to rozdělí do služeb, přidají se testy.</li>
                 <li><strong>Distribuovaná cache</strong> — pokud poběží portál na více serverech (load balancing), session cache musí být sdílená. Trivial fix (Redis), ale pro PoC zbytečné.</li>
             </ul>

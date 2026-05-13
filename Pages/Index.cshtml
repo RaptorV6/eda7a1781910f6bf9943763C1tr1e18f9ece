@@ -1230,7 +1230,9 @@
                     log.info('SsoLogin', `Spouštím SSO přihlášení přes ${serverSsoEndpoint}`);
                     try {
                         const ssoPayload = await runSsoLogin();
-                        log.info('SsoLogin', `SSO výsledek: ok=${ssoPayload?.ok}, loginSucceeded=${ssoPayload?.loginSucceeded}, authResult=${ssoPayload?.authResult || '(prázdný)'}`);
+                        log.info('SsoLogin', `SSO výsledek: ok=${ssoPayload?.ok}, loginSucceeded=${ssoPayload?.loginSucceeded}, authResult=${ssoPayload?.authResult || '(prázdný)'}, dptStatus=${ssoPayload?.loginSubmitStatusCode ?? '?'}, csrfFound=${ssoPayload?.csrfTokenFound}`);
+                        if (ssoPayload?.loginSubmitPreview) log.info('SsoLogin', `DPT body: ${ssoPayload.loginSubmitPreview}`);
+                        if (ssoPayload?.authMethodsPreview) log.info('SsoLogin', `AuthMethods body: ${ssoPayload.authMethodsPreview}`);
                         if (ssoPayload?.loginSucceeded) {
                             const resources = extractResources(ssoPayload.resourcesPayload);
                             if (resources?.length > 0) {

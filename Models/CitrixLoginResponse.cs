@@ -71,4 +71,16 @@ public sealed class CitrixLoginResponse
     public string ErrorMessage { get; init; } = string.Empty;
 
     public string InnerErrorMessage { get; init; } = string.Empty;
+
+    public string CurrentStep { get; init; } = string.Empty;
+
+    public string TargetUri { get; init; } = string.Empty;
+
+    public string ProcessIdentity { get; init; } = string.Empty;
+
+    public string ProcessImpersonationLevel { get; init; } = string.Empty;
+
+    public string RequestIdentity { get; init; } = string.Empty;
+
+    public string[] DnsAddresses { get; init; } = [];
 }

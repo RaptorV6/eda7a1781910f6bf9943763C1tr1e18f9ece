@@ -180,3 +180,52 @@ Tell the user there is no test project. Offer to add one if they want.
 
 Avoid:
 Fake/aspirational test runs.
+
+---
+
+## 2026-05-14 — Workspace App domain pass-through uses `CitrixAuth/Login`, NOT DomainPassthroughAuth
+
+Fact:
+mitmproxy capture of real Citrix Workspace App domain pass-through login shows:
+```
+POST /Citrix/FISWeb/CitrixAuth/Login HTTP/1.1
+X-Citrix-Background-Request: True
+X-Citrix-IsUsingHTTPS: Yes
+Content-Length: 0
+User-Agent: CitrixReceiver/26.3.0.95 Windows/10.0 SelfService/26.3.0.96 (Release)
+```
+No `Authorization: Negotiate` header — this is NOT Kerberos/NTLM at the HTTP layer. CitrixAuth is a token-based mechanism specific to Citrix Workspace App.
+
+Why it matters:
+- 3+ days were spent on Kerberos/RBCD without this evidence. The correct endpoint is `CitrixAuth/Login`.
+- Do NOT implement `DomainPassthroughAuth/*` or `WindowsIdentity.RunImpersonated` until `CitrixAuth/Login` response is analyzed.
+
+Applies to:
+`Program.cs` — SSO implementation. Any AD SSO proposal.
+
+Do this:
+Probe `CitrixAuth/Login` first (endpoint `POST /api/citrix-diagnostics/citrixauth-probe` already in `Program.cs:1524`). Read the response XML before writing SSO code.
+
+Avoid:
+- Proposing Kerberos, RBCD, SPN, `WindowsIdentity.RunImpersonated` without `Authorization: Negotiate` in captured traffic.
+- Using `DomainPassthroughAuth/*` endpoint — not confirmed by traffic.
+
+---
+
+## 2026-05-14 — mitmproxy cert bypass: Workspace App has own cert store
+
+Fact:
+Citrix Workspace App rejects mitmproxy's CA certificate even after installing it to Windows Trusted Root Authorities. Workspace App ships its own certificate store and ignores the OS store.
+
+Why it matters:
+- `Certificate verify failed: self-signed certificate in certificate chain` will always appear in mitmproxy flows for Workspace App requests.
+- The *response* is blocked, but mitmproxy still captures outgoing request headers — enough to identify endpoint and headers.
+
+Applies to:
+Any future mitmproxy traffic analysis of Workspace App behavior.
+
+Do this:
+Accept cert errors as expected. Use mitmproxy output for request headers only. Actual response analysis requires deploying the `citrixauth-probe` endpoint server-side.
+
+Avoid:
+Suggesting Workspace App cert import as a fix — it won't work.

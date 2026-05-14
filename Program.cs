@@ -1060,8 +1060,60 @@ app.MapPost("/api/citrix-sso/login", async (
             });
         }
 
-        // Step 3: DomainPassthroughAuth/Login — runs under user impersonation with UseDefaultCredentials
-        await WindowsIdentity.RunImpersonatedAsync(windowsIdentity.AccessToken, async () =>
+        // Step 3: DomainPassthroughAuth/Login.
+        // IIS NTLM token (loopback) has ImpersonationLevel=Impersonation — outbound network calls
+        // fall back to process identity, not the user. We need S4U2Self to get a Kerberos token.
+        // With TrustedToAuthForDelegation set on VXXXX22FISXVI15$ in AD, S4U2Self produces a
+        // Delegation-level token that UseDefaultCredentials can forward via RBCD to pnagent.
+        var upnFromClaims = windowsIdentity.Claims
+            .FirstOrDefault(c => c.Type == System.Security.Claims.ClaimTypes.Upn)?.Value ?? string.Empty;
+        string s4uUpn;
+        if (!string.IsNullOrWhiteSpace(upnFromClaims))
+        {
+            s4uUpn = upnFromClaims;
+        }
+        else
+        {
+            var domainMap = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+            {
+                ["FIS"] = "fis.acr",
+                ["ACR"] = "acr"
+            };
+            var nameParts = windowsIdentity.Name.Split('\\');
+            var netbios = nameParts.Length == 2 ? nameParts[0] : string.Empty;
+            var userName = nameParts.Length == 2 ? nameParts[1] : windowsIdentity.Name;
+            var fqdn = domainMap.TryGetValue(netbios, out var d) ? d : $"{netbios.ToLower()}.acr";
+            s4uUpn = $"{userName}@{fqdn}";
+        }
+
+        WindowsIdentity s4uIdentity;
+        try
+        {
+            s4uIdentity = new WindowsIdentity(s4uUpn);
+        }
+        catch (Exception ex)
+        {
+            return Results.Ok(new CitrixLoginResponse
+            {
+                Ok = false,
+                RequestId = requestId,
+                BootstrapStatusCode = bootstrapStatusCode is null ? null : (int)bootstrapStatusCode.Value,
+                AuthMethodsStatusCode = authMethodsStatusCode is null ? null : (int)authMethodsStatusCode.Value,
+                BootstrapFinalUrl = bootstrapFinalUrl,
+                AuthMethodsPreview = authMethodsPreview,
+                CookieNames = CitrixExplicitAuth.GetCookieNames(cookies, storeRootUri),
+                CsrfTokenFound = true,
+                ErrorType = "S4U2SelfFailed",
+                ErrorMessage = $"S4U2Self pro '{s4uUpn}' selhal: {ex.Message}. Zkontrolujte UPN format a TrustedToAuthForDelegation na VXXXX22FISXVI15$.",
+                InnerErrorMessage = ex.InnerException?.Message ?? string.Empty
+            });
+        }
+
+        logger.LogInformation(
+            "Citrix SSO S4U2Self. RequestId: {RequestId}. UPN: {UPN}. ImpersonationLevel: {ImpersonationLevel}",
+            requestId, s4uUpn, s4uIdentity.ImpersonationLevel);
+
+        await WindowsIdentity.RunImpersonatedAsync(s4uIdentity.AccessToken, async () =>
         {
             using var authHandler = new HttpClientHandler
             {
@@ -1083,7 +1135,7 @@ app.MapPost("/api/citrix-sso/login", async (
             authResult = CitrixExplicitAuth.FindElementValue(dptBody, "Result") ?? string.Empty;
 
             logger.LogInformation(
-                "Citrix SSO DomainPassthroughAuth result. RequestId: {RequestId}. StatusCode: {StatusCode}. AuthResult: {AuthResult}. ImpersonationLevel: {ImpersonationLevel}",
+                "Citrix SSO DomainPassthroughAuth result. RequestId: {RequestId}. StatusCode: {StatusCode}. AuthResult: {AuthResult}. S4uImpersonationLevel: {ImpersonationLevel}",
                 requestId, (int)dptResp.StatusCode, authResult, WindowsIdentity.GetCurrent().ImpersonationLevel);
         });
 
@@ -1466,6 +1518,36 @@ app.MapGet("/api/citrix-sso/test", async (HttpContext ctx, IConfiguration config
         dptStatus,
         dptBody = dptBody2,
         wwwAuth
+    });
+});
+
+app.MapPost("/api/citrix-diagnostics/citrixauth-probe", async (IConfiguration configuration, CancellationToken cancellationToken) =>
+{
+    var baseUrl = configuration["CitrixDiagnostics:BaseUrl"] ?? "";
+    var storeRootUri = new Uri(baseUrl);
+    var loginUri = new Uri(storeRootUri, "CitrixAuth/Login");
+
+    using var handler = new HttpClientHandler { AllowAutoRedirect = false, UseCookies = true };
+    using var client = new HttpClient(handler);
+
+    using var request = new HttpRequestMessage(HttpMethod.Post, loginUri);
+    request.Headers.TryAddWithoutValidation("Cache-Control", "no-cache");
+    request.Headers.TryAddWithoutValidation("Accept", "*/*");
+    request.Headers.TryAddWithoutValidation("X-Citrix-IsUsingHTTPS", "Yes");
+    request.Headers.TryAddWithoutValidation("X-Citrix-Background-Request", "True");
+    request.Headers.TryAddWithoutValidation("User-Agent", "CitrixReceiver/26.3.0.95 Windows/10.0 SelfService/26.3.0.96 (Release) X1Class CWACapable");
+    request.Content = new StringContent(string.Empty);
+    request.Content.Headers.ContentType = null;
+
+    using var response = await client.SendAsync(request, cancellationToken);
+    var body = await response.Content.ReadAsStringAsync(cancellationToken);
+    var respHeaders = response.Headers.ToDictionary(h => h.Key, h => string.Join(", ", h.Value));
+
+    return Results.Ok(new
+    {
+        status = (int)response.StatusCode,
+        headers = respHeaders,
+        body = CitrixExplicitAuth.Preview(body)
     });
 });
 

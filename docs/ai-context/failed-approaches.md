@@ -151,3 +151,25 @@ Fix applied:
 
 Do not repeat:
 Do not `git add` `.sln` files in this repo. If a `.sln` exists locally for IDE use, add it to `.gitignore`.
+
+---
+
+## 2026-05-13 — Navrhování Kerberos/delegace bez důkazu z traffic
+
+Context:
+Implementace AD SSO pro automatické přihlášení přes Citrix StoreFront.
+
+Tried:
+Opakované navrhování Kerberos Constrained Delegation (RBCD, SPN, WindowsIdentity.RunImpersonated) bez znalosti co StoreFront reálně očekává.
+
+Observed failure:
+3+ dny bez výsledku. User explicitně řekl "žádný Kerberos dnes" a Claude přesto navracel Kerberos řešení.
+
+Root cause:
+Předpoklad že SSO = Kerberos, bez ověření reálného traffic z Workspace App.
+
+Do instead:
+Nejdřív zachytit mitmproxy traffic z Workspace App při domain pass-through loginu. Teprve po analýze traffic napsat kód.
+
+Do not repeat:
+Nenavrhovat Kerberos/RBCD/SPN/delegaci dokud uživatel nepřinese mitmproxy traffic který to potvrdí.

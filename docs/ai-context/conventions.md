@@ -39,6 +39,10 @@ Project conventions Claude must follow.
 - Do not commit `bin/`, `obj/`, `publish/` artefacts.
 - Active branch: `main` (citrix-poc force-pushed to main 2026-05-07). Do not push or merge without explicit user instruction.
 
+## Terminology
+
+- Tato aplikace se jmenuje **CitrixKomponenta**, ne "portál". Vždy použij "CitrixKomponenta" v komunikaci s uživatelem.
+
 ## User / project preferences
 
 - Czech-language interaction is OK. The user's recent request was in Czech ("udělej všechny fáze"). Reply in the language the user uses.

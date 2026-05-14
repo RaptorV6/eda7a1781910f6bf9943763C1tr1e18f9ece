@@ -1,24 +1,44 @@
 # Current task
 
-Last updated: 2026-05-07
+Last updated: 2026-05-14
 
 ## Objective
-Citrix StoreFront / NetScaler explicit-auth proxy POC. Server-side .NET 10 endpoints replicate the browser login flow so the portal can drive Citrix end-to-end: auth → list apps → click → ICA download → Workspace App launch.
+Implement AD SSO — automatic Citrix login using the user's Windows domain identity, without manual password entry. PoC explicit-auth flow is fully functional. Next milestone: replicate CitrixAuth token-based flow.
 
-## Current status — PoC FUNCTIONAL END-TO-END
-On `citrix-poc` branch. Verified against real StoreFront `https://citrixvpx01.fis.acr/Citrix/FISWeb/`:
+## Current status — CitrixAuth probe added, awaiting test
 
-- ✅ Server-side login → `loginSucceeded: true`, `result=success`
-- ✅ `Resources/List` → 200, 9 apps returned
-- ✅ Session token (GUID) returned to browser; cookies cached server-side under that token
-- ✅ Tile rendering with click handler
-- ✅ Icon proxy through `/api/citrix-proxy` (icons display)
-- ✅ Click tile → `.ica` file downloads with correct STA + LogonTicket
-- ✅ Confirmed by user: ICA opened on machine with Citrix Workspace App → app launched
-- ✅ Cross-validated ICA against official StoreFront ICA — `SessionsharingKey` bit-identical, all per-launch tokens correctly unique
+mitmproxy capture confirmed Workspace App hits `CitrixAuth/Login` (NOT `DomainPassthroughAuth`):
+
+```
+POST /Citrix/FISWeb/CitrixAuth/Login HTTP/1.1
+X-Citrix-Background-Request: True
+X-Citrix-IsUsingHTTPS: Yes
+Content-Length: 0
+User-Agent: CitrixReceiver/26.3.0.95 Windows/10.0 SelfService/26.3.0.96
+```
+
+No `Authorization` header → NOT Kerberos/NTLM at this layer. CitrixAuth is token-based, not SPNEGO.
+
+New endpoint added to `Program.cs:1524`:
+- `POST /api/citrix-diagnostics/citrixauth-probe` — fires exact Workspace App headers at `CitrixAuth/Login`, returns `{status, headers, body}`
+
+**Not yet deployed/tested.** Build clean (`dotnet build` 0 errors).
+
+## Endpoints (current full list)
+- `POST /api/citrix-diagnostics/explicit-login` — full auth + Resources/List + session token
+- `GET /api/citrix-diagnostics/server-probe` — bootstrap chain probe
+- `POST /api/citrix-diagnostics/citrixauth-probe` — **NEW** — probe CitrixAuth/Login with Workspace App headers
+- `GET /api/citrix-proxy?session=<token>&path=<rel>` — authenticated proxy (anti-SSRF: path must start with `Resources/`)
+- `GET /api/citrix-launch-status` — rewrites fileFetchUrl host
+- `POST /api/client-log` — browser console relay
+
+## Immediate next steps
+1. `dotnet publish -c Release -o ./publish` → deploy to server
+2. Call probe: `fetch('/api/citrix-diagnostics/citrixauth-probe', {method:'POST'}).then(r=>r.json()).then(console.log)`
+3. Analyze response — expect XML describing CitrixAuth token protocol
+4. Based on response, implement CitrixAuth-based SSO in `Program.cs`
 
 ## Architecture (locked-in)
-
 ```
 Browser ──POST login─→ Portal ──server-side auth dance─→ StoreFront
                          │
@@ -27,59 +47,15 @@ Browser ──POST login─→ Portal ──server-side auth dance─→ StoreFr
 Browser ──klik─────────→ Portal /api/citrix-proxy?session=<GUID>&path=Resources/...
                          │
                          └─ Cached cookies → GET StoreFront → proxy bytes back
-                            (icons: pass-through Content-Type;
-                             ICA: Content-Type=application/x-ica + Content-Disposition: attachment)
 ```
-
-## Endpoints
-- `POST /api/citrix-diagnostics/explicit-login` — auth + Resources/List + session token issuance
-- `GET /api/citrix-proxy?session=<token>&path=<rel>` — generic authenticated proxy. Anti-SSRF: `path` must start with `Resources/`, no `..`, no absolute URI
 
 ## Security
 - Cookies (auth tokens) NEVER reach browser — server-side only
 - Browser holds only opaque GUID
-- Password never logged (only username + domain logged)
+- Password never logged (only username + domain)
 - Path whitelist on proxy blocks SSRF
-
-## What worked (final flow that succeeds)
-1. Bootstrap GET `/Citrix/FISWeb/` with **page-like headers** (no `X-Requested-With`, browser Accept) → 302
-2. Follow 302 to `/cgi/setclient?wica` → 200 HTML w/ meta-refresh
-3. Parse meta-refresh → loop GET `/Citrix/FISWeb` → 301 → `/Citrix/FISWeb/` → 200 (StoreFront sets `ASP.NET_SessionId` + `CsrfToken`)
-4. POST `/Authentication/GetAuthMethods` (no Csrf-Token header) → 200
-5. POST `/ExplicitAuth/Login` (GET returns 404 on this IIS, POST works) → form XML
-6. POST `/ExplicitAuth/LoginAttempt` with username/password/domain/`loginBtn=Přihlásit` → `<Result>success</Result>`
-7. POST `/Resources/List` with `format=json&resourceDetails=Default` → 200 JSON
-
-## Resource fields (from real `Resources/List`)
-```json
-{
-  "id": "22Controller.GINIS PROVOZNI W202",
-  "name": "GINIS CVICNA",
-  "iconurl": "Resources/Icon/<base64>?size=128",
-  "launchurl": "Resources/LaunchIca/<base64>.ica",
-  "clienttypes": ["ica30", "rdp"],   // NO html5 → native Workspace App required
-  "launchstatusurl": "Resources/GetLaunchStatus/<base64>",
-  "cancellaunch": "Resources/CancelLaunch/<base64>",
-  "subscriptionstatus": "subscribed"
-}
-```
-
-## Completed this session (2026-05-07)
-
-- ✅ Renamed project `PortalComponent` → `CitrixComponent` (.csproj, all namespaces, docs)
-- ✅ Both repos synced: private (`RaptorV6/eda7a1781910f6bf9943763C1tr1e18f9ece`) + public (`MO-FIS-DEV/citrix-poc`)
-- ✅ `.sln` removed from repo root (caused `MSB1011` ambiguity on `dotnet publish`)
-- ✅ `dotnet build CitrixComponent.csproj` → clean
-
-## Open / next steps
-- AD SSO implementation (variant B — Kerberos Constrained Delegation) — see session-handoff.md for prerequisites
-- Production hardening:
-  - Distributed cache (Redis) instead of IMemoryCache for multi-instance
-  - Session token rotation
-  - CSRF protection on portal endpoints
-  - Refactor Citrix logic out of `Program.cs` into typed `CitrixStoreFrontClient`
-- HTML5 fallback: not needed for this StoreFront (`clienttypes` lacks `html5`)
 
 ## Commands
 - `rm -rf ./publish && dotnet publish -c Release -o ./publish`
 - `dotnet build`
+- Probe call: `fetch('/api/citrix-diagnostics/citrixauth-probe', {method:'POST'}).then(r=>r.json()).then(console.log)`

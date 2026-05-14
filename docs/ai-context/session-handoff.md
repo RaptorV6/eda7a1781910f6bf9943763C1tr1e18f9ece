@@ -1,20 +1,34 @@
 # Session handoff
 
-Last updated: 2026-05-07
+Last updated: 2026-05-14
 
 ## Summary
-PoC end-to-end functional. Project renamed `PortalComponent` → `CitrixComponent` (2026-05-07). Both repos synced. `.sln` removed from repo root. Build + publish clean.
+PoC end-to-end functional. mitmproxy confirmed Workspace App uses `CitrixAuth/Login` (NOT DomainPassthroughAuth, NOT Kerberos). New probe endpoint added to `Program.cs`. Build clean, not yet deployed.
 
 ## Current state
 
-**Public repo** `MO-FIS-DEV/citrix-poc` — synced. Latest commit `cfeac67` "Rename PortalComponent → CitrixComponent".
+**Branch:** `main` (merged from `citrix-poc`)
 
-**Local workspace** — `citrix-poc` branch. Latest commit `8839aeb` "Remove .sln from repo".
+**Last commit:** includes `citrixauth-probe` endpoint + Kerberos-without-evidence entry in failed-approaches.md
 
-**Private repo** `RaptorV6/eda7a1781910f6bf9943763C1tr1e18f9ece` — pushed, commit `8839aeb`.
+**Project:** `CitrixComponent` (renamed from `PortalComponent` 2026-05-07)
+
+## Key finding from mitmproxy (2026-05-14)
+
+Workspace App domain pass-through sends:
+```
+POST /Citrix/FISWeb/CitrixAuth/Login HTTP/1.1
+X-Citrix-Background-Request: True
+X-Citrix-IsUsingHTTPS: Yes
+Content-Length: 0
+User-Agent: CitrixReceiver/26.3.0.95 Windows/10.0 SelfService/26.3.0.96 (Release)
+```
+
+**No `Authorization: Negotiate` header.** CitrixAuth is token-based, not SPNEGO/Kerberos/NTLM at HTTP layer.
+
+Mitmproxy cert blocker: Workspace App has own cert store, rejected mitmproxy CA. Still captured outgoing headers — enough to identify the endpoint.
 
 ## Architecture (final, see decisions.md)
-
 - Cookies live server-side in `IMemoryCache` keyed by GUID; browser holds opaque token only
 - Bootstrap chain uses page-like headers (no `X-Requested-With`); API calls keep AJAX headers
 - `/api/citrix-launch-status` rewrites `fileFetchUrl` host from internal StoreFront to public gateway
@@ -22,58 +36,36 @@ PoC end-to-end functional. Project renamed `PortalComponent` → `CitrixComponen
 - Anti-SSRF whitelist on `/api/citrix-proxy` (`path` MUST start with `Resources/`)
 
 ## Important files
-- `Program.cs` — auth flow, session cache, proxy endpoint, launch-status endpoint
-- `Pages/Index.cshtml` — login form, tile rendering, click handler with receiver:// + iframe ICA fallback
-- `Pages/Index.cshtml.cs` — config binding (`PublicGatewayHost`, `PublicStorePath`)
+- `Program.cs` — auth flow, session cache, proxy endpoint, launch-status endpoint, citrixauth-probe
+- `Pages/Index.cshtml` — login form, tile rendering, click handler
+- `Pages/Index.cshtml.cs` — config binding
 - `Models/CitrixLoginResponse.cs` — includes `SessionToken`
-- `appsettings.json` — `BaseUrl`, `PublicGatewayHost`, `PublicStorePath`
-- `CitrixComponent.csproj` — project file (was `PortalComponent.csproj`)
+- `appsettings.json` — `BaseUrl` = `https://pnagent.fis.acr/Citrix/FISWeb/`, `PublicGatewayHost` = `pnagent.fis.acr`
+- `CitrixComponent.csproj` — project file
 
-## Naming (changed 2026-05-07)
-- Project: `CitrixComponent` (was `PortalComponent`)
-- Namespaces: `CitrixComponent.Models`, `CitrixComponent.Pages`
-- DLL: `CitrixComponent.dll`
-- No `.sln` in repo — `dotnet build/run/publish` uses `.csproj` standalone
+## Next session plan
 
-## Verified end-to-end (against `citrixvpx01.fis.acr` / `pnagent.fis.acr`)
-1. Login → `loginSucceeded: true`, sessionToken issued
-2. Resources/List → 9 apps (GINIS sady, MS Edge, Visual Studio Pro 2022, RDP, Reporty FIS)
-3. Icon proxy → tiles render correctly
-4. Tile click → receiver:// invocation → Citrix Workspace App opens app silently
-5. Cross-validation: bit-identical `SessionsharingKey` in our ICA vs official Citrix StoreFront ICA
+1. **Deploy**: `rm -rf ./publish && dotnet publish -c Release -o ./publish` → copy to server
+2. **Probe CitrixAuth**: call `POST /api/citrix-diagnostics/citrixauth-probe` from browser console:
+   ```js
+   fetch('/api/citrix-diagnostics/citrixauth-probe', {method:'POST'}).then(r=>r.json()).then(console.log)
+   ```
+3. **Analyze response** — expect XML describing CitrixAuth token challenge/protocol
+4. **Implement**: based on response, add CitrixAuth-based SSO endpoint to `Program.cs`
+5. **Do NOT** propose Kerberos/RBCD/SPN unless mitmproxy traffic contains `Authorization: Negotiate` header
 
-## Next session — plan
-
-1. User tests `publish` build on deployment server (smoke test against real Citrix).
-2. After successful test → **AD SSO** implementation (variant B: Negotiate + Kerberos delegation).
-
-## AD SSO prerequisites (need before code change)
-
-**Infrastructure (user / AD admin):**
-1. Service account in AD (e.g. `acr\svc-portal`)
-2. SPN registration: `setspn -A HTTP/<portal-hostname>.<domain> <service-account>`
-3. RBCD on Citrix StoreFront: `Set-ADComputer -Identity citrixvpx01 -PrincipalsAllowedToDelegateToAccount ...`
-4. StoreFront: enable `Domain Pass-through` auth, configure Trusted Domains
-5. Portal on domain-joined Windows, app pool runs as service account
-
-**Code (Claude task):**
-1. `AddAuthentication(NegotiateDefaults.AuthenticationScheme).AddNegotiate()` + `AddAuthorization()`
-2. New endpoint `POST /api/citrix-diagnostics/sso-login` with `[Authorize]`
-3. `WindowsIdentity.RunImpersonated` + `UseDefaultCredentials = true` for Kerberos delegation
-4. Frontend: try SSO first on load, fallback to manual form on 401
-
-## Open questions before AD SSO code
-1. Confirm portal hostname (for SPN)
-2. Confirm service account exact name/domain
-3. Confirm RBCD set up on `citrixvpx01.fis.acr`
-4. List of user domains for Citrix Trusted Domains
+## Rules still active
+- No Kerberos proposals without mitmproxy evidence of `Authorization: Negotiate` (see failed-approaches.md)
+- Czech strings preserved in API responses and form values
+- `AllowAutoRedirect = false` mandatory
+- CSRF token re-read after every hop
 
 ## End-goal architecture
 1. ✅ PoC functional
-2. ⏳ Publish test on deployment server
-3. ⏳ AD SSO (variant B — Kerberos Constrained Delegation)
-4. ⏳ Web component refactor — `<citrix-tiles>` custom element, JS bundle, backend endpoints unchanged
-5. Final: merge `citrix-poc` → `main`
+2. ⏳ Publish + deploy test on deployment server
+3. ⏳ CitrixAuth-based SSO (token-based, NOT Kerberos) — probe response needed first
+4. ⏳ Web component refactor — `<citrix-tiles>` custom element
+5. Final: production hardening (Redis cache, CSRF on portal endpoints)
 
 ## For next Claude session
-Read `CLAUDE.md` → `current-task.md` → this file. State after publish test: success → proceed to AD SSO open questions + code. Failure → debug regression.
+Read `CLAUDE.md` → `current-task.md` → this file. First action: deploy and call the citrixauth-probe endpoint. Report the `{status, headers, body}` response. That response determines all SSO code.

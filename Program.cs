@@ -969,25 +969,21 @@ app.MapPost("/api/citrix-sso/login", async (
     var logger = loggerFactory.CreateLogger("CitrixSsoLogin");
 
     if (httpContext.User.Identity is not WindowsIdentity windowsIdentity || !windowsIdentity.IsAuthenticated)
-    {
         return Results.Ok(new CitrixLoginResponse
         {
             Ok = false,
             ErrorType = "WindowsAuthUnavailable",
             ErrorMessage = "Windows identita není dostupná — IIS Windows Authentication není povolena nebo uživatel není autentizován."
         });
-    }
 
     var storeRootUrl = config["CitrixDiagnostics:BaseUrl"] ?? string.Empty;
     if (!Uri.TryCreate(storeRootUrl, UriKind.Absolute, out var storeRootUri))
-    {
         return Results.Ok(new CitrixLoginResponse
         {
             Ok = false,
             ErrorType = "InvalidStoreRootUrl",
             ErrorMessage = $"CitrixDiagnostics:BaseUrl není validní URI: {storeRootUrl}"
         });
-    }
 
     var requestId = Guid.NewGuid().ToString("N")[..12];
     var forwardedAcceptLanguage = httpContext.Request.Headers.AcceptLanguage.ToString();
@@ -995,76 +991,52 @@ app.MapPost("/api/citrix-sso/login", async (
     var httpsHeaderValue = string.Equals(storeRootUri.Scheme, Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase) ? "Yes" : "No";
 
     logger.LogInformation(
-        "Citrix SSO login started. RequestId: {RequestId}. WindowsUser: {WindowsUser}. ImpersonationLevel: {ImpersonationLevel}. StoreRootUrl: {StoreRootUrl}",
-        requestId, windowsIdentity.Name, windowsIdentity.ImpersonationLevel, storeRootUri);
+        "Citrix SSO login started. RequestId: {RequestId}. WindowsUser: {WindowsUser}. ImpersonationLevel: {ImpersonationLevel}",
+        requestId, windowsIdentity.Name, windowsIdentity.ImpersonationLevel);
 
-    var cookies = new CookieContainer();
-    var authMethodsUri = new Uri(storeRootUri, "Authentication/GetAuthMethods");
-    var dptUri = new Uri(storeRootUri, "DomainPassthroughAuth/Login");
+    var citrixLoginUri = new Uri(storeRootUri, "CitrixAuth/Login");
     var resourcesUri = new Uri(storeRootUri, "Resources/List");
+    var cookies = new CookieContainer();
 
-    HttpStatusCode? bootstrapStatusCode = null;
-    HttpStatusCode? authMethodsStatusCode = null;
-    HttpStatusCode? loginSubmitStatusCode = null;
-    HttpStatusCode? resourcesStatusCode = null;
-    string bootstrapFinalUrl = storeRootUri.ToString();
-    string authMethodsPreview = string.Empty;
-    string loginSubmitPreview = string.Empty;
-    string resourcesPreview = string.Empty;
-    string authResult = string.Empty;
+    int? st1 = null, st2 = null, st3 = null, st4 = null, st5 = null, st6 = null, stRes = null;
+    string loginResult = string.Empty;
+    string prev4 = string.Empty, prev5 = string.Empty, prev6 = string.Empty, prevRes = string.Empty;
+
+    // Parse param from CitrixAuth WWW-Authenticate challenge header
+    static string ChallengeParam(string header, string name)
+    {
+        var m = System.Text.RegularExpressions.Regex.Match(header, name + @"=""([^""]*)""");
+        return m.Success ? m.Groups[1].Value : string.Empty;
+    }
+
+    // CitrixAuth requesttoken XML body (namespace required by FISAuth)
+    static string RequestTokenXml(string forService, string forServiceUrl) =>
+        $"<?xml version=\"1.0\" encoding=\"utf-8\"?>" +
+        $"<requesttoken xmlns=\"http://citrix.com/delivery-services/1-0/auth/requesttoken\">" +
+        $"<for-service>{forService}</for-service>" +
+        $"<for-service-url>{forServiceUrl}</for-service-url>" +
+        $"<reqtokentemplate></reqtokentemplate>" +
+        $"<requested-lifetime>0.20:00:00</requested-lifetime>" +
+        $"</requesttoken>";
+
+    // Parse IntegratedWindows URL from auth/v1/protocols 300 body
+    static string ParseIntegratedWindowsUrl(string xmlText)
+    {
+        try
+        {
+            var doc = XDocument.Parse(xmlText);
+            var ns = XNamespace.Get("http://citrix.com/delivery-services/1-0/auth/requesttokenchoices");
+            return doc.Descendants(ns + "choice")
+                .FirstOrDefault(c => (string?)c.Element(ns + "protocol") == "IntegratedWindows")
+                ?.Element(ns + "location")?.Value ?? string.Empty;
+        }
+        catch { return string.Empty; }
+    }
 
     try
     {
-        // Step 1+2: Bootstrap + GetAuthMethods — anonymous, just need CsrfToken + ASP.NET session
-        using (var anonHandler = new HttpClientHandler
-        {
-            AllowAutoRedirect = false,
-            UseCookies = true,
-            CookieContainer = cookies,
-            AutomaticDecompression = DecompressionMethods.All
-        })
-        using (var anonClient = new HttpClient(anonHandler) { Timeout = TimeSpan.FromSeconds(30) })
-        {
-            using var bootstrapReq = CitrixExplicitAuth.CreateRequest(
-                HttpMethod.Get, storeRootUri,
-                CitrixExplicitAuth.CreatePageHeaders(storeRootUri, forwardedAcceptLanguage, forwardedUserAgent));
-            using var bootstrapResp = await anonClient.SendAsync(bootstrapReq, cancellationToken);
-            bootstrapStatusCode = bootstrapResp.StatusCode;
-            bootstrapFinalUrl = bootstrapResp.RequestMessage?.RequestUri?.ToString() ?? storeRootUri.ToString();
-            _ = await bootstrapResp.Content.ReadAsStringAsync(cancellationToken);
-
-            var amHeaders = CitrixExplicitAuth.CreateBaseHeaders(storeRootUri, authMethodsUri, httpsHeaderValue, acceptLanguage: forwardedAcceptLanguage, userAgent: forwardedUserAgent);
-            amHeaders["X-Citrix-AM-CredentialTypes"] = CitrixExplicitAuth.FormCredentialTypes;
-            amHeaders["X-Citrix-AM-LabelTypes"] = CitrixExplicitAuth.FormLabelTypes;
-            using var amReq = CitrixExplicitAuth.CreateRequest(HttpMethod.Post, authMethodsUri, amHeaders, string.Empty, "application/x-www-form-urlencoded; charset=UTF-8");
-            using var amResp = await anonClient.SendAsync(amReq, cancellationToken);
-            authMethodsStatusCode = amResp.StatusCode;
-            authMethodsPreview = CitrixExplicitAuth.Preview(await amResp.Content.ReadAsStringAsync(cancellationToken));
-        }
-
-        var csrf = CitrixExplicitAuth.GetCookieValue(cookies, storeRootUri, "CsrfToken");
-        if (string.IsNullOrWhiteSpace(csrf))
-        {
-            return Results.Ok(new CitrixLoginResponse
-            {
-                Ok = false,
-                RequestId = requestId,
-                BootstrapStatusCode = bootstrapStatusCode is null ? null : (int)bootstrapStatusCode.Value,
-                AuthMethodsStatusCode = authMethodsStatusCode is null ? null : (int)authMethodsStatusCode.Value,
-                BootstrapFinalUrl = bootstrapFinalUrl,
-                AuthMethodsPreview = authMethodsPreview,
-                CookieNames = CitrixExplicitAuth.GetCookieNames(cookies, storeRootUri),
-                CsrfTokenFound = false,
-                ErrorType = "CsrfTokenMissing",
-                ErrorMessage = "Po bootstrapu nebyl nalezen CsrfToken — StoreFront pravděpodobně nevytvoří session."
-            });
-        }
-
-        // Step 3: DomainPassthroughAuth/Login.
-        // IIS NTLM token (loopback) has ImpersonationLevel=Impersonation — outbound network calls
-        // fall back to process identity, not the user. We need S4U2Self to get a Kerberos token.
-        // With TrustedToAuthForDelegation set on VXXXX22FISXVI15$ in AD, S4U2Self produces a
-        // Delegation-level token that UseDefaultCredentials can forward via RBCD to pnagent.
+        // S4U2Self: upgrade IIS NTLM Impersonation-level token → Kerberos Delegation-level token
+        // so outbound FISAuth/Integrated/Authenticate runs as the real user, not the app pool.
         var upnFromClaims = windowsIdentity.Claims
             .FirstOrDefault(c => c.Type == System.Security.Claims.ClaimTypes.Upn)?.Value ?? string.Empty;
         string s4uUpn;
@@ -1097,87 +1069,229 @@ app.MapPost("/api/citrix-sso/login", async (
             {
                 Ok = false,
                 RequestId = requestId,
-                BootstrapStatusCode = bootstrapStatusCode is null ? null : (int)bootstrapStatusCode.Value,
-                AuthMethodsStatusCode = authMethodsStatusCode is null ? null : (int)authMethodsStatusCode.Value,
-                BootstrapFinalUrl = bootstrapFinalUrl,
-                AuthMethodsPreview = authMethodsPreview,
-                CookieNames = CitrixExplicitAuth.GetCookieNames(cookies, storeRootUri),
-                CsrfTokenFound = true,
                 ErrorType = "S4U2SelfFailed",
-                ErrorMessage = $"S4U2Self pro '{s4uUpn}' selhal: {ex.Message}. Zkontrolujte UPN format a TrustedToAuthForDelegation na VXXXX22FISXVI15$.",
+                ErrorMessage = $"S4U2Self pro '{s4uUpn}' selhal: {ex.Message}. Zkontrolujte TrustedToAuthForDelegation na VXXXX22FISXVI15$.",
                 InnerErrorMessage = ex.InnerException?.Message ?? string.Empty
             });
         }
 
         logger.LogInformation(
-            "Citrix SSO S4U2Self. RequestId: {RequestId}. UPN: {UPN}. ImpersonationLevel: {ImpersonationLevel}",
+            "S4U2Self succeeded. RequestId: {RequestId}. UPN: {UPN}. ImpLevel: {ImpLevel}",
             requestId, s4uUpn, s4uIdentity.ImpersonationLevel);
 
+        // Step 1: POST CitrixAuth/Login (no auth) → 401 with loginRealm + tokenUrl
+        string loginRealm, tokenUrl;
+        using (var h = new HttpClientHandler { AllowAutoRedirect = false, UseCookies = false, AutomaticDecompression = DecompressionMethods.All })
+        using (var c = new HttpClient(h) { Timeout = TimeSpan.FromSeconds(30) })
+        {
+            using var req = new HttpRequestMessage(HttpMethod.Post, citrixLoginUri);
+            req.Headers.TryAddWithoutValidation("X-Citrix-IsUsingHTTPS", httpsHeaderValue);
+            req.Headers.TryAddWithoutValidation("X-Citrix-Background-Request", "True");
+            req.Headers.TryAddWithoutValidation("X-Requested-With", "XMLHttpRequest");
+            req.Headers.TryAddWithoutValidation("Accept", "*/*");
+            req.Content = new StringContent("", System.Text.Encoding.UTF8, "application/x-www-form-urlencoded");
+            using var resp = await c.SendAsync(req, cancellationToken);
+            st1 = (int)resp.StatusCode;
+            var wwwAuth = resp.Headers.TryGetValues("WWW-Authenticate", out var v1) ? string.Join(", ", v1) : string.Empty;
+            loginRealm = ChallengeParam(wwwAuth, "realm");
+            tokenUrl = ChallengeParam(wwwAuth, "locations");
+            logger.LogInformation("Step1 CitrixAuth challenge. RequestId={RequestId} Status={Status} Realm={Realm} TokenUrl={TokenUrl}",
+                requestId, st1, loginRealm, tokenUrl);
+        }
+
+        if (string.IsNullOrWhiteSpace(loginRealm) || string.IsNullOrWhiteSpace(tokenUrl))
+            return Results.Ok(new CitrixLoginResponse
+            {
+                Ok = false, RequestId = requestId,
+                ErrorType = "CitrixAuthChallengeFailed",
+                ErrorMessage = $"CitrixAuth/Login nevydalo 401 challenge s realm/locations. Status: {st1}.",
+                BootstrapStatusCode = st1
+            });
+
+        var loginTokenBody = RequestTokenXml(loginRealm, citrixLoginUri.ToString());
+
+        // Step 2: POST FISAuth/auth/v1/token (no auth) → 401 with protocolRealm + protocolsUrl + tokenServiceUrl
+        string protocolRealm, protocolsUrl, tokenServiceUrl;
+        using (var h = new HttpClientHandler { AllowAutoRedirect = false, UseCookies = false, AutomaticDecompression = DecompressionMethods.All })
+        using (var c = new HttpClient(h) { Timeout = TimeSpan.FromSeconds(30) })
+        {
+            using var req = new HttpRequestMessage(HttpMethod.Post, tokenUrl);
+            req.Headers.TryAddWithoutValidation("X-Citrix-IsUsingHTTPS", httpsHeaderValue);
+            req.Headers.TryAddWithoutValidation("Accept", "application/vnd.citrix.requesttokenresponse+xml, application/vnd.citrix.requesttokenchoices+xml, application/xml, text/xml");
+            req.Content = new StringContent(loginTokenBody, System.Text.Encoding.UTF8, "application/vnd.citrix.requesttoken+xml");
+            using var resp = await c.SendAsync(req, cancellationToken);
+            st2 = (int)resp.StatusCode;
+            var wwwAuth2 = resp.Headers.TryGetValues("WWW-Authenticate", out var v2) ? string.Join(", ", v2) : string.Empty;
+            protocolRealm = ChallengeParam(wwwAuth2, "realm");
+            protocolsUrl = ChallengeParam(wwwAuth2, "locations");
+            tokenServiceUrl = ChallengeParam(wwwAuth2, "serviceroot-hint");
+            logger.LogInformation("Step2 token challenge. RequestId={RequestId} Status={Status} ProtocolRealm={ProtocolRealm} ProtocolsUrl={ProtocolsUrl}",
+                requestId, st2, protocolRealm, protocolsUrl);
+        }
+
+        if (string.IsNullOrWhiteSpace(protocolRealm) || string.IsNullOrWhiteSpace(protocolsUrl))
+            return Results.Ok(new CitrixLoginResponse
+            {
+                Ok = false, RequestId = requestId,
+                ErrorType = "FISAuthProtocolChallengeFailed",
+                ErrorMessage = $"FISAuth/auth/v1/token nevydalo 401 challenge. Status: {st2}.",
+                BootstrapStatusCode = st1, AuthMethodsStatusCode = st2
+            });
+
+        var protocolBody = RequestTokenXml(protocolRealm, tokenServiceUrl);
+
+        // Step 3: POST auth/v1/protocols → 300, parse IntegratedWindows URL from choices XML
+        string integratedWindowsUrl;
+        using (var h = new HttpClientHandler { AllowAutoRedirect = false, UseCookies = false, AutomaticDecompression = DecompressionMethods.All })
+        using (var c = new HttpClient(h) { Timeout = TimeSpan.FromSeconds(30) })
+        {
+            using var req = new HttpRequestMessage(HttpMethod.Post, protocolsUrl);
+            req.Headers.TryAddWithoutValidation("X-Citrix-IsUsingHTTPS", httpsHeaderValue);
+            req.Headers.TryAddWithoutValidation("Accept", "application/vnd.citrix.requesttokenchoices+xml, application/xml, text/xml");
+            req.Content = new StringContent(protocolBody, System.Text.Encoding.UTF8, "application/vnd.citrix.requesttoken+xml");
+            using var resp = await c.SendAsync(req, cancellationToken);
+            st3 = (int)resp.StatusCode;
+            var body = await resp.Content.ReadAsStringAsync(cancellationToken);
+            integratedWindowsUrl = ParseIntegratedWindowsUrl(body);
+            logger.LogInformation("Step3 protocols. RequestId={RequestId} Status={Status} IntegratedWindowsUrl={IntegratedWindowsUrl}",
+                requestId, st3, integratedWindowsUrl);
+        }
+
+        if (string.IsNullOrWhiteSpace(integratedWindowsUrl))
+            return Results.Ok(new CitrixLoginResponse
+            {
+                Ok = false, RequestId = requestId,
+                ErrorType = "IntegratedWindowsNotAvailable",
+                ErrorMessage = $"auth/v1/protocols neobsahuje IntegratedWindows choice. Status: {st3}.",
+                BootstrapStatusCode = st1, AuthMethodsStatusCode = st2, LoginFormStatusCode = st3
+            });
+
+        // Step 4: POST FISAuth/Integrated/Authenticate — impersonated as the real user → inner token
+        string innerToken = string.Empty;
         await WindowsIdentity.RunImpersonatedAsync(s4uIdentity.AccessToken, async () =>
         {
-            using var authHandler = new HttpClientHandler
+            using var h = new HttpClientHandler
             {
                 UseDefaultCredentials = true,
                 UseProxy = false,
                 AllowAutoRedirect = false,
-                UseCookies = true,
-                CookieContainer = cookies,
+                UseCookies = false,
                 AutomaticDecompression = DecompressionMethods.All
             };
-            using var authClient = new HttpClient(authHandler) { Timeout = TimeSpan.FromSeconds(30) };
-
-            var dptHeaders = CitrixExplicitAuth.CreateBaseHeaders(storeRootUri, dptUri, httpsHeaderValue, csrf, forwardedAcceptLanguage, forwardedUserAgent);
-            using var dptReq = CitrixExplicitAuth.CreateRequest(HttpMethod.Post, dptUri, dptHeaders, string.Empty, "application/x-www-form-urlencoded; charset=UTF-8");
-            using var dptResp = await authClient.SendAsync(dptReq, cancellationToken);
-            loginSubmitStatusCode = dptResp.StatusCode;
-            var dptBody = await dptResp.Content.ReadAsStringAsync(cancellationToken);
-            loginSubmitPreview = CitrixExplicitAuth.Preview(dptBody);
-            authResult = CitrixExplicitAuth.FindElementValue(dptBody, "Result") ?? string.Empty;
-
-            logger.LogInformation(
-                "Citrix SSO DomainPassthroughAuth result. RequestId: {RequestId}. StatusCode: {StatusCode}. AuthResult: {AuthResult}. S4uImpersonationLevel: {ImpersonationLevel}",
-                requestId, (int)dptResp.StatusCode, authResult, WindowsIdentity.GetCurrent().ImpersonationLevel);
+            using var c = new HttpClient(h) { Timeout = TimeSpan.FromSeconds(30) };
+            using var req = new HttpRequestMessage(HttpMethod.Post, integratedWindowsUrl);
+            req.Headers.TryAddWithoutValidation("X-Citrix-IsUsingHTTPS", httpsHeaderValue);
+            req.Headers.TryAddWithoutValidation("Accept", "application/vnd.citrix.requesttokenresponse+xml, application/xml, text/xml");
+            req.Content = new StringContent(protocolBody, System.Text.Encoding.UTF8, "application/vnd.citrix.requesttoken+xml");
+            using var resp = await c.SendAsync(req, cancellationToken);
+            st4 = (int)resp.StatusCode;
+            var xml = await resp.Content.ReadAsStringAsync(cancellationToken);
+            prev4 = CitrixExplicitAuth.Preview(xml);
+            innerToken = CitrixExplicitAuth.FindElementValue(xml, "token");
+            logger.LogInformation("Step4 Integrated/Authenticate. RequestId={RequestId} Status={Status} HasToken={HasToken} ImpLevel={ImpLevel}",
+                requestId, st4, !string.IsNullOrEmpty(innerToken), WindowsIdentity.GetCurrent().ImpersonationLevel);
         });
 
-        var updatedCsrf = CitrixExplicitAuth.GetCookieValue(cookies, storeRootUri, "CsrfToken") ?? csrf;
-
-        if (!string.Equals(authResult, "success", StringComparison.OrdinalIgnoreCase))
-        {
+        if (string.IsNullOrWhiteSpace(innerToken))
             return Results.Ok(new CitrixLoginResponse
             {
-                Ok = true,
-                RequestId = requestId,
-                LoginSucceeded = false,
-                Message = "DomainPassthroughAuth nevrátil success. Zkontrolujte Kerberos delegaci (RBCD) a Windows Authentication na IIS.",
-                AuthResult = authResult,
-                BootstrapStatusCode = bootstrapStatusCode is null ? null : (int)bootstrapStatusCode.Value,
-                AuthMethodsStatusCode = authMethodsStatusCode is null ? null : (int)authMethodsStatusCode.Value,
-                LoginSubmitStatusCode = loginSubmitStatusCode is null ? null : (int)loginSubmitStatusCode.Value,
-                BootstrapFinalUrl = bootstrapFinalUrl,
-                LoginPostUrl = dptUri.ToString(),
-                CookieNames = CitrixExplicitAuth.GetCookieNames(cookies, storeRootUri),
-                CsrfTokenFound = !string.IsNullOrWhiteSpace(updatedCsrf),
-                AuthMethodsPreview = authMethodsPreview,
-                LoginSubmitPreview = loginSubmitPreview
+                Ok = false, RequestId = requestId,
+                ErrorType = "InnerTokenFailed",
+                ErrorMessage = $"FISAuth/Integrated/Authenticate nevrátil token. Status: {st4}. Zkontrolujte RBCD a TrustedToAuthForDelegation na VXXXX22FISXVI15$.",
+                BootstrapStatusCode = st1, AuthMethodsStatusCode = st2, LoginFormStatusCode = st3,
+                LoginSubmitStatusCode = st4, LoginSubmitPreview = prev4
             });
+
+        // Step 5: POST FISAuth/auth/v1/token with CitrixAuth inner token → outer (login) token
+        string outerToken = string.Empty;
+        using (var h = new HttpClientHandler { AllowAutoRedirect = false, UseCookies = false, AutomaticDecompression = DecompressionMethods.All })
+        using (var c = new HttpClient(h) { Timeout = TimeSpan.FromSeconds(30) })
+        {
+            using var req = new HttpRequestMessage(HttpMethod.Post, tokenUrl);
+            req.Headers.TryAddWithoutValidation("X-Citrix-IsUsingHTTPS", httpsHeaderValue);
+            req.Headers.TryAddWithoutValidation("Accept", "application/vnd.citrix.requesttokenresponse+xml, application/xml, text/xml");
+            req.Headers.TryAddWithoutValidation("Authorization", $"CitrixAuth {innerToken}");
+            req.Content = new StringContent(loginTokenBody, System.Text.Encoding.UTF8, "application/vnd.citrix.requesttoken+xml");
+            using var resp = await c.SendAsync(req, cancellationToken);
+            st5 = (int)resp.StatusCode;
+            var xml = await resp.Content.ReadAsStringAsync(cancellationToken);
+            prev5 = CitrixExplicitAuth.Preview(xml);
+            outerToken = CitrixExplicitAuth.FindElementValue(xml, "token");
+            logger.LogInformation("Step5 token exchange. RequestId={RequestId} Status={Status} HasToken={HasToken}",
+                requestId, st5, !string.IsNullOrEmpty(outerToken));
         }
 
-        // Step 4: Resources/List — session cookies are sufficient, no Kerberos needed
-        using (var resHandler = new HttpClientHandler
+        if (string.IsNullOrWhiteSpace(outerToken))
+            return Results.Ok(new CitrixLoginResponse
+            {
+                Ok = false, RequestId = requestId,
+                ErrorType = "OuterTokenFailed",
+                ErrorMessage = $"FISAuth/auth/v1/token exchange nevrátil login token. Status: {st5}.",
+                BootstrapStatusCode = st1, AuthMethodsStatusCode = st2, LoginFormStatusCode = st3,
+                LoginSubmitStatusCode = st4, LoginSubmitPreview = prev4, AuthMethodsPreview = prev5
+            });
+
+        // Step 6: POST CitrixAuth/Login with outer token → success + session cookies
+        using (var h = new HttpClientHandler { AllowAutoRedirect = false, UseCookies = true, CookieContainer = cookies, AutomaticDecompression = DecompressionMethods.All })
+        using (var c = new HttpClient(h) { Timeout = TimeSpan.FromSeconds(30) })
         {
-            AllowAutoRedirect = false,
-            UseCookies = true,
-            CookieContainer = cookies,
-            AutomaticDecompression = DecompressionMethods.All
-        })
-        using (var resClient = new HttpClient(resHandler) { Timeout = TimeSpan.FromSeconds(30) })
+            using var req = new HttpRequestMessage(HttpMethod.Post, citrixLoginUri);
+            req.Headers.TryAddWithoutValidation("Authorization", $"CitrixAuth {outerToken}");
+            req.Headers.TryAddWithoutValidation("X-Citrix-IsUsingHTTPS", httpsHeaderValue);
+            req.Headers.TryAddWithoutValidation("X-Citrix-Background-Request", "True");
+            req.Headers.TryAddWithoutValidation("X-Requested-With", "XMLHttpRequest");
+            req.Headers.TryAddWithoutValidation("Accept", "application/xml, text/xml, */*");
+            req.Content = new StringContent("", System.Text.Encoding.UTF8, "application/x-www-form-urlencoded");
+            using var resp = await c.SendAsync(req, cancellationToken);
+            st6 = (int)resp.StatusCode;
+            var xml = await resp.Content.ReadAsStringAsync(cancellationToken);
+            prev6 = CitrixExplicitAuth.Preview(xml);
+            loginResult = CitrixExplicitAuth.FindElementValue(xml, "Result");
+            logger.LogInformation("Step6 CitrixAuth/Login. RequestId={RequestId} Status={Status} Result={Result}",
+                requestId, st6, loginResult);
+        }
+
+        if (!string.Equals(loginResult, "success", StringComparison.OrdinalIgnoreCase))
+            return Results.Ok(new CitrixLoginResponse
+            {
+                Ok = true, RequestId = requestId,
+                LoginSucceeded = false,
+                Message = $"CitrixAuth/Login nevrátil success. Result: {loginResult}",
+                AuthResult = loginResult,
+                LoginPostUrl = citrixLoginUri.ToString(),
+                LoginSubmitStatusCode = st6, LoginSubmitPreview = prev6,
+                CookieNames = CitrixExplicitAuth.GetCookieNames(cookies, storeRootUri)
+            });
+
+        // Step 7: GET FISWeb/ bootstrap — creates CtxsAuthId + ASP.NET_SessionId.
+        // Non-fatal: cookies may be set even if the request throws (connection reset after auth).
+        try
         {
-            var resHeaders = CitrixExplicitAuth.CreateBaseHeaders(storeRootUri, resourcesUri, httpsHeaderValue, updatedCsrf, forwardedAcceptLanguage, forwardedUserAgent);
+            using var h = new HttpClientHandler { AllowAutoRedirect = false, UseCookies = true, CookieContainer = cookies, AutomaticDecompression = DecompressionMethods.All };
+            using var c = new HttpClient(h) { Timeout = TimeSpan.FromSeconds(15) };
+            using var bootReq = CitrixExplicitAuth.CreateRequest(
+                HttpMethod.Get, storeRootUri,
+                CitrixExplicitAuth.CreatePageHeaders(storeRootUri, forwardedAcceptLanguage, forwardedUserAgent));
+            _ = await c.SendAsync(bootReq, cancellationToken);
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning("Step7 FISWeb bootstrap non-fatal. RequestId={RequestId} Error={Error}", requestId, ex.Message);
+        }
+
+        // CsrfToken: send if present; Resources/List works without it (proven 2026-05-14) but send defensively
+        var csrf = CitrixExplicitAuth.GetCookieValue(cookies, storeRootUri, "CsrfToken") ?? string.Empty;
+
+        // Step 8: Resources/List
+        using (var h = new HttpClientHandler { AllowAutoRedirect = false, UseCookies = true, CookieContainer = cookies, AutomaticDecompression = DecompressionMethods.All })
+        using (var c = new HttpClient(h) { Timeout = TimeSpan.FromSeconds(30) })
+        {
+            var resHeaders = CitrixExplicitAuth.CreateBaseHeaders(storeRootUri, resourcesUri, httpsHeaderValue, csrf, forwardedAcceptLanguage, forwardedUserAgent);
             using var resReq = CitrixExplicitAuth.CreateRequest(HttpMethod.Post, resourcesUri, resHeaders, "format=json&resourceDetails=Default", "application/x-www-form-urlencoded; charset=UTF-8");
-            using var resResp = await resClient.SendAsync(resReq, cancellationToken);
-            resourcesStatusCode = resResp.StatusCode;
+            using var resResp = await c.SendAsync(resReq, cancellationToken);
+            stRes = (int)resResp.StatusCode;
             var resBody = await resResp.Content.ReadAsStringAsync(cancellationToken);
-            resourcesPreview = CitrixExplicitAuth.Preview(resBody);
+            prevRes = CitrixExplicitAuth.Preview(resBody);
             var resourcesPayload = CitrixExplicitAuth.TryParseJson(resBody);
 
             var sessionToken = sessionCache.Store(new CitrixSessionEntry
@@ -1188,55 +1302,46 @@ app.MapPost("/api/citrix-sso/login", async (
             });
 
             logger.LogInformation(
-                "Citrix SSO login succeeded. RequestId: {RequestId}. SessionToken: {SessionToken}. WindowsUser: {WindowsUser}",
-                requestId, sessionToken, windowsIdentity.Name);
+                "Citrix SSO login succeeded. RequestId={RequestId} WindowsUser={WindowsUser} SessionToken={SessionToken}",
+                requestId, windowsIdentity.Name, sessionToken);
 
             return Results.Ok(new CitrixLoginResponse
             {
                 Ok = true,
                 RequestId = requestId,
                 LoginSucceeded = true,
-                Message = "SSO přihlášení přes DomainPassthroughAuth proběhlo úspěšně.",
+                Message = "SSO přihlášení přes CitrixAuth/FISAuth proběhlo úspěšně.",
                 SessionToken = sessionToken,
-                AuthResult = authResult,
-                BootstrapStatusCode = bootstrapStatusCode is null ? null : (int)bootstrapStatusCode.Value,
-                AuthMethodsStatusCode = authMethodsStatusCode is null ? null : (int)authMethodsStatusCode.Value,
-                LoginSubmitStatusCode = loginSubmitStatusCode is null ? null : (int)loginSubmitStatusCode.Value,
-                ResourcesStatusCode = resourcesStatusCode is null ? null : (int)resourcesStatusCode.Value,
-                BootstrapFinalUrl = bootstrapFinalUrl,
-                LoginPostUrl = dptUri.ToString(),
+                AuthResult = loginResult,
+                LoginSubmitStatusCode = st6,
+                ResourcesStatusCode = stRes,
+                LoginPostUrl = citrixLoginUri.ToString(),
                 ResourcesUrl = resourcesUri.ToString(),
                 CookieNames = CitrixExplicitAuth.GetCookieNames(cookies, storeRootUri),
-                CsrfTokenFound = !string.IsNullOrWhiteSpace(CitrixExplicitAuth.GetCookieValue(cookies, storeRootUri, "CsrfToken")),
-                AuthMethodsPreview = authMethodsPreview,
-                LoginSubmitPreview = loginSubmitPreview,
-                ResourcesPreview = resourcesPreview,
+                CsrfTokenFound = !string.IsNullOrWhiteSpace(csrf),
+                LoginSubmitPreview = prev6,
+                ResourcesPreview = prevRes,
                 ResourcesPayload = resourcesPayload
             });
         }
     }
     catch (Exception exception)
     {
-        logger.LogError(
-            exception,
-            "Citrix SSO login failed. RequestId: {RequestId}. StoreRootUrl: {StoreRootUrl}. WindowsUser: {WindowsUser}",
-            requestId, storeRootUri, windowsIdentity.Name);
+        logger.LogError(exception,
+            "Citrix SSO login failed. RequestId={RequestId} WindowsUser={WindowsUser}",
+            requestId, windowsIdentity.Name);
 
         return Results.Ok(new CitrixLoginResponse
         {
             Ok = false,
             RequestId = requestId,
-            AuthResult = authResult,
-            BootstrapStatusCode = bootstrapStatusCode is null ? null : (int)bootstrapStatusCode.Value,
-            AuthMethodsStatusCode = authMethodsStatusCode is null ? null : (int)authMethodsStatusCode.Value,
-            LoginSubmitStatusCode = loginSubmitStatusCode is null ? null : (int)loginSubmitStatusCode.Value,
-            ResourcesStatusCode = resourcesStatusCode is null ? null : (int)resourcesStatusCode.Value,
-            BootstrapFinalUrl = bootstrapFinalUrl,
-            LoginPostUrl = dptUri.ToString(),
+            AuthResult = loginResult,
+            LoginSubmitStatusCode = st6,
+            ResourcesStatusCode = stRes,
+            LoginPostUrl = citrixLoginUri.ToString(),
             ResourcesUrl = resourcesUri.ToString(),
-            AuthMethodsPreview = authMethodsPreview,
-            LoginSubmitPreview = loginSubmitPreview,
-            ResourcesPreview = resourcesPreview,
+            LoginSubmitPreview = prev6,
+            ResourcesPreview = prevRes,
             CookieNames = CitrixExplicitAuth.GetCookieNames(cookies, storeRootUri),
             CsrfTokenFound = !string.IsNullOrWhiteSpace(CitrixExplicitAuth.GetCookieValue(cookies, storeRootUri, "CsrfToken")),
             ErrorType = exception.GetType().FullName ?? exception.GetType().Name,

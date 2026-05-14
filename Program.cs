@@ -1566,47 +1566,28 @@ app.MapPost("/api/citrix-diagnostics/fisauth-token-probe", async (IConfiguration
     };
     using var client = new HttpClient(handler);
 
-    // Step 1: GET auth/v1/token — přímé sondování token endpointu z WWW-Authenticate challenge
-    var tokenUri = new Uri(fisAuthRoot, "auth/v1/token");
-    using var tokenReq = new HttpRequestMessage(HttpMethod.Get, tokenUri);
-    tokenReq.Headers.TryAddWithoutValidation("Accept", "application/vnd.citrix.requesttokenresponse+xml, text/xml, */*");
-    tokenReq.Headers.TryAddWithoutValidation("X-Citrix-IsUsingHTTPS", "Yes");
-    using var tokenResp = await client.SendAsync(tokenReq, cancellationToken);
-    var tokenBody = await tokenResp.Content.ReadAsStringAsync(cancellationToken);
-    var tokenHeaders = tokenResp.Headers.ToDictionary(h => h.Key, h => string.Join(", ", h.Value));
-    log.Add(new { step = "GET auth/v1/token", status = (int)tokenResp.StatusCode, headers = tokenHeaders, body = CitrixExplicitAuth.Preview(tokenBody) });
+    // Step 1: POST FISAuth/Authentication/GetAuthMethods — zjistit co FISAuth podporuje
+    var authMethodsUri = new Uri(fisAuthRoot, "Authentication/GetAuthMethods");
+    using var authMethodsReq = new HttpRequestMessage(HttpMethod.Post, authMethodsUri);
+    authMethodsReq.Headers.TryAddWithoutValidation("Accept", "application/xml, text/xml, */*");
+    authMethodsReq.Headers.TryAddWithoutValidation("X-Citrix-IsUsingHTTPS", "Yes");
+    authMethodsReq.Content = new StringContent(string.Empty);
+    authMethodsReq.Content.Headers.ContentType = null;
+    using var authMethodsResp = await client.SendAsync(authMethodsReq, cancellationToken);
+    var authMethodsBody = await authMethodsResp.Content.ReadAsStringAsync(cancellationToken);
+    var authMethodsHeaders = authMethodsResp.Headers.ToDictionary(h => h.Key, h => string.Join(", ", h.Value));
+    log.Add(new { step = "POST FISAuth/Authentication/GetAuthMethods", status = (int)authMethodsResp.StatusCode, headers = authMethodsHeaders, body = CitrixExplicitAuth.Preview(authMethodsBody) });
 
-    // Step 2: POST ExplicitForms/Start s prázdným tělem — nechat FISAuth vrátit formulář/výzvu
-    var startUri = new Uri(fisAuthRoot, "ExplicitForms/Start");
-    using var startEmptyReq = new HttpRequestMessage(HttpMethod.Post, startUri);
-    startEmptyReq.Headers.TryAddWithoutValidation("Accept", "application/vnd.citrix.requesttokenresponse+xml, text/xml, */*");
-    startEmptyReq.Headers.TryAddWithoutValidation("X-Citrix-IsUsingHTTPS", "Yes");
-    startEmptyReq.Content = new StringContent(string.Empty);
-    startEmptyReq.Content.Headers.ContentType = null;
-    using var startEmptyResp = await client.SendAsync(startEmptyReq, cancellationToken);
-    var startEmptyBody = await startEmptyResp.Content.ReadAsStringAsync(cancellationToken);
-    log.Add(new { step = "POST ExplicitForms/Start (empty)", status = (int)startEmptyResp.StatusCode, body = CitrixExplicitAuth.Preview(startEmptyBody) });
-
-    // Step 3: POST ExplicitForms/Start s requesttoken XML (realm z CitrixAuth/Login challenge)
-    const string realm = "cf07671f-361c-401a-b6ab-83c7ef97736b";
-    var tokenUrl = tokenUri.ToString();
-    var requestTokenXml = $"""
-        <?xml version="1.0" encoding="UTF-8" standalone="no" ?>
-        <requesttoken xmlns="http://citrix.com/delivery-services/1-0/auth/requesttoken">
-          <for-service>{realm}</for-service>
-          <for-service-url>{tokenUrl}</for-service-url>
-          <reqtokentemplate></reqtokentemplate>
-          <requested-lifetime>0.20:00:00</requested-lifetime>
-        </requesttoken>
-        """;
-    using var startXmlReq = new HttpRequestMessage(HttpMethod.Post, startUri);
-    startXmlReq.Headers.TryAddWithoutValidation("Accept", "application/vnd.citrix.requesttokenresponse+xml, text/xml");
-    startXmlReq.Headers.TryAddWithoutValidation("X-Citrix-IsUsingHTTPS", "Yes");
-    startXmlReq.Content = new StringContent(requestTokenXml, System.Text.Encoding.UTF8,
-        "application/vnd.citrix.requesttoken+xml");
-    using var startXmlResp = await client.SendAsync(startXmlReq, cancellationToken);
-    var startXmlBody = await startXmlResp.Content.ReadAsStringAsync(cancellationToken);
-    log.Add(new { step = "POST ExplicitForms/Start (requesttoken XML)", status = (int)startXmlResp.StatusCode, body = CitrixExplicitAuth.Preview(startXmlBody) });
+    // Step 2: GET FISAuth root — sledovat redirecty a cookies (bootstrap chain)
+    using var bootstrapReq = new HttpRequestMessage(HttpMethod.Get, fisAuthRoot);
+    foreach (var (k, v) in CitrixExplicitAuth.CreatePageHeaders(fisAuthRoot))
+        bootstrapReq.Headers.TryAddWithoutValidation(k, v);
+    using var bootstrapResp = await client.SendAsync(bootstrapReq, cancellationToken);
+    var bootstrapBody = await bootstrapResp.Content.ReadAsStringAsync(cancellationToken);
+    var bootstrapCookies = handler.CookieContainer.GetCookies(fisAuthRoot)
+        .Cast<System.Net.Cookie>().Select(c => c.Name).ToList();
+    var bootstrapHeaders = bootstrapResp.Headers.ToDictionary(h => h.Key, h => string.Join(", ", h.Value));
+    log.Add(new { step = "GET FISAuth/ bootstrap", status = (int)bootstrapResp.StatusCode, headers = bootstrapHeaders, cookies = bootstrapCookies, body = CitrixExplicitAuth.Preview(bootstrapBody) });
 
     return Results.Ok(new { fisAuthRoot = fisAuthRoot.ToString(), log });
 });

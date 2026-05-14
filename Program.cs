@@ -1035,6 +1035,36 @@ app.MapPost("/api/citrix-sso/login", async (
 
     try
     {
+        // Pre-flight: confirm DNS + log identity before any HTTP call.
+        // If IIS impersonates the request thread (identity impersonate=true or kernel-mode auth),
+        // the impersonated user may lack network access and DNS will fail here.
+        var processIdentityName = WindowsIdentity.GetCurrent().Name;
+        var processImpLevel = WindowsIdentity.GetCurrent().ImpersonationLevel;
+        string[] dnsAddrs;
+        try
+        {
+            var addrs = await System.Net.Dns.GetHostAddressesAsync(storeRootUri.Host, cancellationToken);
+            dnsAddrs = addrs.Select(a => a.ToString()).ToArray();
+        }
+        catch (Exception dnsEx)
+        {
+            return Results.Ok(new CitrixLoginResponse
+            {
+                Ok = false,
+                RequestId = requestId,
+                ErrorType = "DnsPreflightFailed",
+                ErrorMessage = $"DNS pro '{storeRootUri.Host}' selhal ještě před HTTP callem. " +
+                               $"ProcessIdentity: {processIdentityName} (ImpLevel: {processImpLevel}). " +
+                               $"RequestIdentity: {windowsIdentity.Name}. " +
+                               $"Chyba: {dnsEx.Message} — Zkontrolujte IIS impersonaci (<identity impersonate>) a síťový přístup app pool účtu.",
+                LoginPostUrl = citrixLoginUri.ToString()
+            });
+        }
+
+        logger.LogInformation(
+            "SSO preflight OK. RequestId={RequestId}. ProcessIdentity={ProcessIdentity}. ImpLevel={ImpLevel}. RequestIdentity={RequestIdentity}. DNS={DNS}",
+            requestId, processIdentityName, processImpLevel, windowsIdentity.Name, string.Join(",", dnsAddrs));
+
         // S4U2Self: upgrade IIS NTLM Impersonation-level token → Kerberos Delegation-level token
         // so outbound FISAuth/Integrated/Authenticate runs as the real user, not the app pool.
         var upnFromClaims = windowsIdentity.Claims

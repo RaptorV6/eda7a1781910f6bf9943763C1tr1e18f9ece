@@ -50,6 +50,20 @@ Assuming app pool identity is `app_zadosti` or any named service account.
 - `citrixvpx01.fis.acr` resolves only on the corporate network. From a dev container without VPN, requests will fail with DNS errors — that is **not** a code bug.
 - StoreFront uses `ASP.NET_SessionId`, `CsrfToken`, and frequently `CtxsAuthId` cookies. Some are HttpOnly; cookie inspection in browsers requires DevTools → Application → Cookies.
 
+## 2026-05-14 — PowerShell Invoke-RestMethod TLS error on localhost
+
+Lesson:
+Calling `Invoke-RestMethod -Uri "https://localhost/..."` on the deployment server fails with "Nadřízené připojení bylo uzavřeno" (underlying connection closed) because ASP.NET Core uses a self-signed dev cert and PowerShell rejects it.
+
+Fix options (in order of preference):
+1. Add `-SkipCertificateCheck` flag to `Invoke-RestMethod`
+2. Use the HTTP port instead (`http://localhost:<port>/...`)
+
+Do this:
+Always use `-SkipCertificateCheck` when calling localhost HTTPS from PowerShell on the deployment server, or find the HTTP port from `appsettings.json` / Kestrel config.
+
+---
+
 ## Logging
 
 - Default log level `Information`, `Microsoft.AspNetCore` clamped to `Warning` (`appsettings.json`).

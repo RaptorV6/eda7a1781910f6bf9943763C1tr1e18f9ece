@@ -84,6 +84,19 @@ Result/notes:
 
 ---
 
+## Call CitrixAuth probe (PowerShell — deployment server)
+
+```powershell
+Invoke-RestMethod -Uri "https://localhost/api/citrix-diagnostics/citrixauth-probe" -Method POST -SkipCertificateCheck
+```
+
+Result/notes:
+- `-SkipCertificateCheck` required — deployment server uses self-signed cert, PowerShell rejects it otherwise (error: "Nadřízené připojení bylo uzavřeno").
+- Returns `{status, headers, body}` — `body` is the CitrixAuth/Login response from StoreFront (expected XML).
+- Alternative if HTTP port known: `Invoke-RestMethod -Uri "http://localhost:<port>/api/citrix-diagnostics/citrixauth-probe" -Method POST`
+
+---
+
 ## Caveats
 
 - Anything other than `dotnet build` will trigger a Claude Code permission prompt unless added to `.claude/settings.local.json`.

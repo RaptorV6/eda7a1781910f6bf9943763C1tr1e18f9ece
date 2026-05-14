@@ -54,7 +54,12 @@ dotnet publish CitrixComponent.csproj -c Release -o ./publish
 ```
 
 Result/notes:
-- Verified. Output goes to `publish/` at repo root. Copy that directory to deployment server.
+- Verified. Output goes to `publish/` at repo root.
+- **Kompletní deployment workflow (Codespaces → server):**
+  1. Codespaces: `rm -rf ./publish && dotnet publish -c Release -o ./publish`
+  2. Codespaces: `git add` + `git commit` + `git push` (publish složka je součástí commitu)
+  3. Lokální stroj: `git pull`
+  4. Lokální stroj: zkopírovat `publish/` na deployment server
 
 ---
 

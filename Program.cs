@@ -1551,6 +1551,66 @@ app.MapPost("/api/citrix-diagnostics/citrixauth-probe", async (IConfiguration co
     });
 });
 
+app.MapPost("/api/citrix-diagnostics/fisauth-token-probe", async (IConfiguration configuration, CancellationToken cancellationToken) =>
+{
+    var baseUrl = configuration["CitrixDiagnostics:BaseUrl"] ?? "";
+    var baseUri = new Uri(baseUrl);
+    var fisAuthRoot = new Uri($"{baseUri.Scheme}://{baseUri.Host}/Citrix/FISAuth/");
+    var startUri = new Uri(fisAuthRoot, "ExplicitForms/Start");
+    var log = new List<object>();
+
+    // realm + token URL from the CitrixAuth 401 challenge
+    const string realm = "cf07671f-361c-401a-b6ab-83c7ef97736b";
+    var tokenUrl = new Uri(fisAuthRoot, "auth/v1/token").ToString();
+    var requestTokenXml = $"""
+        <?xml version="1.0" encoding="UTF-8" standalone="no" ?>
+        <requesttoken xmlns="http://citrix.com/delivery-services/1-0/auth/requesttoken">
+          <for-service>{realm}</for-service>
+          <for-service-url>{tokenUrl}</for-service-url>
+          <reqtokentemplate></reqtokentemplate>
+          <requested-lifetime>0.20:00:00</requested-lifetime>
+        </requesttoken>
+        """;
+
+    // Step 1: bootstrap FISAuth session (page-like GET, same pattern as FISWeb bootstrap)
+    using var handler = new HttpClientHandler
+    {
+        AllowAutoRedirect = false,
+        UseCookies = true,
+        UseDefaultCredentials = true
+    };
+    using var client = new HttpClient(handler);
+
+    using var bootstrapReq = new HttpRequestMessage(HttpMethod.Get, fisAuthRoot);
+    foreach (var (k, v) in CitrixExplicitAuth.CreatePageHeaders(fisAuthRoot))
+        bootstrapReq.Headers.TryAddWithoutValidation(k, v);
+    using var bootstrapResp = await client.SendAsync(bootstrapReq, cancellationToken);
+    var bootstrapCookies = handler.CookieContainer.GetCookies(fisAuthRoot)
+        .Cast<System.Net.Cookie>().Select(c => c.Name).ToList();
+    log.Add(new { step = "bootstrap-GET", status = (int)bootstrapResp.StatusCode, cookies = bootstrapCookies });
+
+    // Step 2: POST ExplicitForms/Start with requesttoken XML
+    using var startReq = new HttpRequestMessage(HttpMethod.Post, startUri);
+    startReq.Headers.TryAddWithoutValidation("Accept",
+        "application/vnd.citrix.requesttoken+xml, application/vnd.citrix.requesttokenresponse+xml, text/xml");
+    startReq.Headers.TryAddWithoutValidation("X-Citrix-IsUsingHTTPS", "Yes");
+    startReq.Content = new StringContent(requestTokenXml, System.Text.Encoding.UTF8,
+        "application/vnd.citrix.requesttoken+xml");
+
+    using var startResp = await client.SendAsync(startReq, cancellationToken);
+    var startBody = await startResp.Content.ReadAsStringAsync(cancellationToken);
+    var startHeaders = startResp.Headers.ToDictionary(h => h.Key, h => string.Join(", ", h.Value));
+    log.Add(new
+    {
+        step = "ExplicitForms/Start",
+        status = (int)startResp.StatusCode,
+        headers = startHeaders,
+        body = CitrixExplicitAuth.Preview(startBody)
+    });
+
+    return Results.Ok(new { fisAuthRoot = fisAuthRoot.ToString(), log });
+});
+
 app.MapRazorPages()
    .WithStaticAssets();
 

@@ -1008,6 +1008,8 @@ app.MapPost("/api/citrix-sso/login", async (
     string currentStep = "not-started";
     string targetUri = string.Empty;
     string[] dnsAddrs = [];
+    string integratedAuthMode = string.Empty;
+    string integratedAuthFallbackError = string.Empty;
 
     // Parse param from CitrixAuth WWW-Authenticate challenge header
     static string ChallengeParam(string header, string name)
@@ -1221,7 +1223,7 @@ app.MapPost("/api/citrix-sso/login", async (
         string innerToken = string.Empty;
         currentStep = "4-integrated-authenticate";
         targetUri = integratedWindowsUrl;
-        await WindowsIdentity.RunImpersonatedAsync(s4uIdentity.AccessToken, async () =>
+        async Task<(int Status, string Preview, string Token)> SendIntegratedAuthenticateAsync()
         {
             using var h = new HttpClientHandler
             {
@@ -1238,13 +1240,42 @@ app.MapPost("/api/citrix-sso/login", async (
             req.Headers.TryAddWithoutValidation("User-Agent", receiverUserAgent);
             req.Content = new StringContent(protocolBody, System.Text.Encoding.UTF8, "application/vnd.citrix.requesttoken+xml");
             using var resp = await c.SendAsync(req, cancellationToken);
-            st4 = (int)resp.StatusCode;
+            var status = (int)resp.StatusCode;
             var xml = await resp.Content.ReadAsStringAsync(cancellationToken);
-            prev4 = CitrixExplicitAuth.Preview(xml);
-            innerToken = CitrixExplicitAuth.FindElementValue(xml, "token");
-            logger.LogInformation("Step4 Integrated/Authenticate. RequestId={RequestId} Status={Status} HasToken={HasToken} ImpLevel={ImpLevel}",
-                requestId, st4, !string.IsNullOrEmpty(innerToken), WindowsIdentity.GetCurrent().ImpersonationLevel);
-        });
+            return (status, CitrixExplicitAuth.Preview(xml), CitrixExplicitAuth.FindElementValue(xml, "token"));
+        }
+
+        try
+        {
+            await WindowsIdentity.RunImpersonatedAsync(s4uIdentity.AccessToken, async () =>
+            {
+                var result = await SendIntegratedAuthenticateAsync();
+                st4 = result.Status;
+                prev4 = result.Preview;
+                innerToken = result.Token;
+                integratedAuthMode = "impersonated";
+                logger.LogInformation("Step4 Integrated/Authenticate impersonated. RequestId={RequestId} Status={Status} HasToken={HasToken} ImpLevel={ImpLevel}",
+                    requestId, st4, !string.IsNullOrEmpty(innerToken), WindowsIdentity.GetCurrent().ImpersonationLevel);
+            });
+        }
+        catch (Exception ex)
+        {
+            integratedAuthFallbackError = $"{ex.GetType().FullName}: {ex.Message}";
+            logger.LogWarning(ex,
+                "Step4 Integrated/Authenticate impersonated failed; trying process fallback. RequestId={RequestId} TargetUri={TargetUri}",
+                requestId, integratedWindowsUrl);
+        }
+
+        if (string.IsNullOrWhiteSpace(innerToken))
+        {
+            var result = await SendIntegratedAuthenticateAsync();
+            st4 = result.Status;
+            prev4 = result.Preview;
+            innerToken = result.Token;
+            integratedAuthMode = string.IsNullOrWhiteSpace(integratedAuthFallbackError) ? "process" : "process-fallback";
+            logger.LogInformation("Step4 Integrated/Authenticate process fallback. RequestId={RequestId} Status={Status} HasToken={HasToken}",
+                requestId, st4, !string.IsNullOrEmpty(innerToken));
+        }
 
         if (string.IsNullOrWhiteSpace(innerToken))
             return Results.Ok(new CitrixLoginResponse
@@ -1253,7 +1284,11 @@ app.MapPost("/api/citrix-sso/login", async (
                 ErrorType = "InnerTokenFailed",
                 ErrorMessage = $"FISAuth/Integrated/Authenticate nevrátil token. Status: {st4}. Zkontrolujte RBCD a TrustedToAuthForDelegation na VXXXX22FISXVI15$.",
                 BootstrapStatusCode = st1, AuthMethodsStatusCode = st2, LoginFormStatusCode = st3,
-                LoginSubmitStatusCode = st4, LoginSubmitPreview = prev4
+                LoginSubmitStatusCode = st4, LoginSubmitPreview = prev4,
+                CurrentStep = currentStep,
+                TargetUri = targetUri,
+                IntegratedAuthMode = integratedAuthMode,
+                IntegratedAuthFallbackError = integratedAuthFallbackError
             });
 
         // Step 5: POST FISAuth/auth/v1/token with CitrixAuth inner token → outer (login) token
@@ -1384,6 +1419,8 @@ app.MapPost("/api/citrix-sso/login", async (
                 ResourcesUrl = resourcesUri.ToString(),
                 CookieNames = CitrixExplicitAuth.GetCookieNames(cookies, storeRootUri),
                 CsrfTokenFound = !string.IsNullOrWhiteSpace(csrf),
+                IntegratedAuthMode = integratedAuthMode,
+                IntegratedAuthFallbackError = integratedAuthFallbackError,
                 LoginSubmitPreview = prev6,
                 ResourcesPreview = prevRes,
                 ResourcesPayload = resourcesPayload
@@ -1441,7 +1478,9 @@ app.MapPost("/api/citrix-sso/login", async (
             ProcessIdentity = catchProcessIdentity,
             ProcessImpersonationLevel = catchProcessImpersonationLevel,
             RequestIdentity = httpContext.User.Identity?.Name ?? windowsIdentity.Name,
-            DnsAddresses = dnsAddrs
+            DnsAddresses = dnsAddrs,
+            IntegratedAuthMode = integratedAuthMode,
+            IntegratedAuthFallbackError = integratedAuthFallbackError
         });
     }
 });

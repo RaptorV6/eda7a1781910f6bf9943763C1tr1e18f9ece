@@ -83,4 +83,8 @@ public sealed class CitrixLoginResponse
     public string RequestIdentity { get; init; } = string.Empty;
 
     public string[] DnsAddresses { get; init; } = [];
+
+    public string IntegratedAuthMode { get; init; } = string.Empty;
+
+    public string IntegratedAuthFallbackError { get; init; } = string.Empty;
 }

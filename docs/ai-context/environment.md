@@ -32,6 +32,39 @@ When checking SPNs or RBCD, look for `VXXXX22FISXVI15$` (machine account).
 Avoid:
 Assuming app pool identity is `app_zadosti` or any named service account.
 
+## 2026-06-23 — Kerberos first-hop diagnóza: tři větve
+
+Lesson:
+Problém SSO je v první části řetězce. Správný postup diagnózy (v tomto pořadí):
+
+**Větev 1 — klist get selže → problém v AD/Kerberos/SPN/trustu:**
+```powershell
+klist purge
+klist get HTTP/vxxxx22fisxvi15.fis.acr
+```
+Pokud selže, IIS nemůže dostat Kerberos token bez ohledu na jakoukoli konfiguraci IIS nebo Citrix.
+
+**Větev 2 — klist get projde, ale /api/whoami ukazuje isKerberos=False → problém v browser/IIS/providers:**
+```powershell
+Invoke-WebRequest -Uri "http://VXXXX22FISXVI15.fis.acr:89/api/whoami" -Method GET -UseDefaultCredentials -UseBasicParsing |
+  Select-Object -ExpandProperty Content | ConvertFrom-Json
+```
+Příčiny: prohlížeč URL není v Intranet Zone, IIS Windows Auth providers mají NTLM před Negotiate, kernel-mode auth s useAppPoolCredentials nesedí, nestandardní port 89 způsobuje SPN mismatch.
+
+**Větev 3 — /api/whoami ukazuje isKerberos=True, ale Citrix SSO běží jako pool → problém v C# impersonaci:**
+Přidat `WindowsIdentity.RunImpersonated` kolem kroku 4 FISAuth flow (IntegratedWindows volání).
+
+Aktuální stav (2026-06-23): jsme ve větvi 1 nebo 2 — `klist get HTTP/vxxxx22fisxvi15.fis.acr` selhává.
+
+Why it matters:
+Bez správné diagnózy větve se řeší špatná věc. Citrix komponenta a StoreFront jsou správně — problém je výhradně v Kerberos first hop.
+
+Do this:
+Před jakýmkoli navrhováním řešení SSO ověřit ve které větvi se nacházíme pomocí výše uvedených příkazů.
+
+Avoid:
+Navrhovat změny v Citrix komponentě nebo StoreFront konfiguraci, dokud first hop nevydá isKerberos=True.
+
 ## Deployment constraints
 
 - **Deployment workflow:** Codespaces (dev) → `dotnet publish` locally → kopie publish výstupu na server.

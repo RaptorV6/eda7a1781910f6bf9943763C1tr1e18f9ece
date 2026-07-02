@@ -199,6 +199,33 @@ Affected files/modules:
 
 ---
 
+## 2026-07-02 — SSO řešeno přes sso.html popup bridge, ne server-to-server backend
+
+Status: accepted
+
+Decision:
+Automatické Windows SSO přihlášení do Citrixu se řeší **browser-side popup bridge** na `sso.html`, který již existuje a běží na serveru 07 (`https://vxxxx22fisxva07.fis.acr/Citrix/FISWeb/custom/sso.html`). Frontend na i15 otevře popup, `sso.html` provede celý CitrixAuth+FISAuth+IntegratedWindows flow **same-origin v prohlížeči uživatele** a výsledek pošle zpět přes `window.postMessage({ type: "citrix-sso-result", ok, resources })`. i15 stránka poslouchá `message` event, ověřuje `event.origin === "https://vxxxx22fisxva07.fis.acr"` a vykreslí aplikace.
+
+Reason:
+Server-to-server varianta (`/api/citrix-sso/login` v `Program.cs`, backend na i15 volá StoreFront na 07 s `UseDefaultCredentials=true`) byla zkoušena a end-to-end funguje jen jako `process-fallback` — autentizuje se identita IIS app poolu (doména ACR), ne přihlášený uživatel, protože cross-domain Kerberos ACR → FIS.ACR není možný (viz `failed-approaches.md` a `current-task.md`, 2026-06-22/23). `sso.html` obchází tento problém úplně — Windows Integrated Auth jde přímo z klientova prohlížeče na server 07, jeden skok, stejná doména jako cíl, žádná cross-domain delegace není potřeba.
+
+Alternatives considered:
+- Server-to-server backend s `UseDefaultCredentials` — zamítnuto, blokuje cross-domain Kerberos (viz výše).
+- iframe embed `sso.html` — zamítnuto, StoreFront posílá `Content-Security-Policy: frame-ancestors 'none'`.
+- Credential storage / explicit login — zůstává jako manuální fallback (existující `explicit-login` flow), ne jako primární SSO cesta.
+
+Consequences:
+- `sso.html` se needituje odsud — je to externí soubor na serveru 07, mimo tento repo. Zásahy do něj jsou mimo scope tohoto projektu.
+- Cookies/session pro StoreFront zůstávají v prohlížeči uživatele vázané na origin serveru 07 (ne server-side jako u `explicit-login` flow) — ikony a spuštění aplikací přes `sso.html`-cestu proto musí jít přímo na origin serveru 07 (cross-origin navigace/img, ne fetch — CORS na serveru 07 se neupravuje), na rozdíl od `explicit-login` flow, který cookies drží server-side a proxyuje přes `/api/citrix-proxy`.
+- `/api/citrix-sso/login` backend endpoint zůstává v `Program.cs` nedotčený (pro diagnostiku), ale frontend ho už automaticky nevolá jako primární SSO cestu.
+
+Affected files/modules:
+- `Pages/Index.cshtml` — popup bridge JS, `message` listener
+- `Pages/Index.cshtml.cs` — `SsoBridgeUrl` config property
+- `appsettings.json::CitrixDiagnostics:SsoBridgeUrl`
+
+---
+
 ## 2026-05-07 — Project renamed CitrixComponent
 
 Status: accepted

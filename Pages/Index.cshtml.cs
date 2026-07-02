@@ -24,6 +24,8 @@ public class IndexModel : PageModel
 
     public string CitrixBaseUrl { get; private set; } = string.Empty;
 
+    public string SsoBridgeUrl { get; private set; } = string.Empty;
+
     public string PublicGatewayHost { get; private set; } = string.Empty;
 
     public string PublicStorePath { get; private set; } = string.Empty;
@@ -51,6 +53,7 @@ public class IndexModel : PageModel
         var diagnosticsSection = _configuration.GetSection("CitrixDiagnostics");
 
         CitrixBaseUrl = diagnosticsSection["BaseUrl"]?.Trim() ?? string.Empty;
+        SsoBridgeUrl = diagnosticsSection["SsoBridgeUrl"]?.Trim() ?? string.Empty;
         PublicGatewayHost = diagnosticsSection["PublicGatewayHost"]?.Trim() ?? string.Empty;
         PublicStorePath = diagnosticsSection["PublicStorePath"]?.Trim() ?? string.Empty;
         PanelTitle = diagnosticsSection["PanelTitle"]?.Trim() ?? DefaultPanelTitle;

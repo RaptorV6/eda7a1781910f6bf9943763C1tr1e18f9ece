@@ -1,71 +1,94 @@
 # Session handoff
 
-Last updated: 2026-05-14
+Last updated: 2026-06-22
 
 ## Summary
-PoC end-to-end functional. mitmproxy confirmed Workspace App uses `CitrixAuth/Login` (NOT DomainPassthroughAuth, NOT Kerberos). New probe endpoint added to `Program.cs`. Build clean, not yet deployed.
+
+8-krokový CitrixAuth + FISAuth + IntegratedWindows flow je plně zdokumentovaný a ověřený v PowerShellu jako uživatel ACR\VanD (výsledek: 9 aplikací). C# endpoint `/api/citrix-sso/login` flow technicky zvládá, ale přihlašuje se pod identitou app poolu (`process-fallback`), ne skutečného uživatele. Blokátor: IIS na VXXXX22FISXVI15 (FIS.ACR) dostává od uživatele vand@ACR pouze NTLM — Kerberos ticket nejde vydat cross-domain.
 
 ## Current state
 
-**Branch:** `main` (merged from `citrix-poc`)
+**Branch:** `main`
 
-**Last commit:** includes `citrixauth-probe` endpoint + Kerberos-without-evidence entry in failed-approaches.md
+**Last known commit:** `2f802e5 feat: add IntegratedWindows process fallback`
 
-**Project:** `CitrixComponent` (renamed from `PortalComponent` 2026-05-07)
+**Komponenta běží na:** `http://VXXXX22FISXVI15.fis.acr:89/`
 
-## Key finding from mitmproxy (2026-05-14)
+## Ověřený 8-krokový FISAuth flow
 
-Workspace App domain pass-through sends:
+PowerShell jako ACR\VanD (UseDefaultCredentials) → funguje, vrátí 9 aplikací:
+
+1. POST `CitrixAuth/Login` (prázdné tělo, Workspace App hlavičky) → HTTP 401 + `WWW-Authenticate: CitrixAuth realm=... locations=<tokenUrl>`
+2. POST `<tokenUrl>` s `requesttoken` XML (for-service=realm, for-service-url=loginUrl) → HTTP 401 + `WWW-Authenticate: CitrixAuth realm=... locations=<protocolsUrl> serviceroot-hint=<tokenServiceUrl>`
+3. POST `<protocolsUrl>` s `requesttoken` XML → `requesttokenchoices` XML → vybrat `IntegratedWindows` choice → `<integratedUrl>`
+4. POST `<integratedUrl>` s `requesttoken` XML + `UseDefaultCredentials=true` → `requesttokenresponse` XML s `<token>` (innerToken)
+5. POST `<tokenUrl>` s `requesttoken` XML + `Authorization: CitrixAuth <innerToken>` → `requesttokenresponse` XML s `<token>` (outerToken / loginToken)
+6. POST `CitrixAuth/Login` s `Authorization: CitrixAuth <loginToken>` → `<Result>success</Result>` HTTP 200
+7. GET `https://pnagent.fis.acr/Citrix/FISWeb/` (page headers, browser UA) → cookies vč. `CsrfToken`
+8. POST `Resources/List` (format=json, CSRF hlavička) → seznam aplikací uživatele
+
+**Endpoints FISAuth:**
+- `https://pnagent.fis.acr/Citrix/FISAuth/auth/v1/token`
+- `https://pnagent.fis.acr/Citrix/FISAuth/auth/v1/protocols`
+- `https://pnagent.fis.acr/Citrix/FISAuth/Integrated/Authenticate`
+
+## Stav C# implementace
+
+Endpoint `/api/citrix-sso/login` v `Program.cs`:
+- Technicky projde flow → `loginSucceeded=True`, `resourcesStatusCode=200`
+- ALE: `integratedAuthMode=process-fallback`, `resources=[]`
+- Příčina: krok 4 (`IntegratedWindows/Authenticate`) se volá pod identitou app poolu, ne uživatele
+
+Diagnostický endpoint `/api/whoami`:
 ```
-POST /Citrix/FISWeb/CitrixAuth/Login HTTP/1.1
-X-Citrix-Background-Request: True
-X-Citrix-IsUsingHTTPS: Yes
-Content-Length: 0
-User-Agent: CitrixReceiver/26.3.0.95 Windows/10.0 SelfService/26.3.0.96 (Release)
+authenticated=True
+name=ACR\VanD
+authType=Negotiate
+isKerberos=False
+impersonationLevel=None
 ```
 
-**No `Authorization: Negotiate` header.** CitrixAuth is token-based, not SPNEGO/Kerberos/NTLM at HTTP layer.
+## Blokátor — cross-domain Kerberos
 
-Mitmproxy cert blocker: Workspace App has own cert store, rejected mitmproxy CA. Still captured outgoing headers — enough to identify the endpoint.
+- Uživatel: `vand@ACR` (doména ACR)
+- Server: `VXXXX22FISXVI15.fis.acr` (doména FIS.ACR)
+- SPN existují: `HTTP/vxxxx22fisxvi15`, `HTTP/vxxxx22fisxvi15.fis.acr`, `HTTP/vxxxx22fisxvi15.fis.acr:89`
+- RBCD nastaveno: VXXXX22FISXVI15 → XVA07/XVA08/XVA09
+- `klist get HTTP/vxxxx22fisxvi15.fis.acr` → chyba `0xc000018b` ("SAM databáze neobsahuje účet pro tento důvěryhodný vztah")
+- BackConnectionHostNames test: nepomohl
+- Secure channel serveru do FIS.ACR: v pořádku
 
-## Architecture (final, see decisions.md)
-- Cookies live server-side in `IMemoryCache` keyed by GUID; browser holds opaque token only
-- Bootstrap chain uses page-like headers (no `X-Requested-With`); API calls keep AJAX headers
-- `/api/citrix-launch-status` rewrites `fileFetchUrl` host from internal StoreFront to public gateway
-- `receiver://<public-host>/<store-path>/clientAssistant/getIcaFile/<base64-params>` for silent app launch
-- Anti-SSRF whitelist on `/api/citrix-proxy` (`path` MUST start with `Resources/`)
+**Závěr:** problém je v AD trustu ACR ↔ FIS.ACR nebo v cross-domain Kerberos referral. Není to problém kódu.
 
-## Important files
-- `Program.cs` — auth flow, session cache, proxy endpoint, launch-status endpoint, citrixauth-probe
-- `Pages/Index.cshtml` — login form, tile rendering, click handler
-- `Pages/Index.cshtml.cs` — config binding
-- `Models/CitrixLoginResponse.cs` — includes `SessionToken`
-- `appsettings.json` — `BaseUrl` = `https://pnagent.fis.acr/Citrix/FISWeb/`, `PublicGatewayHost` = `pnagent.fis.acr`
-- `CitrixComponent.csproj` — project file
+## Cílový stav
+
+```
+/api/whoami → isKerberos=True, impersonationLevel=Impersonation
+/api/citrix-sso/login → integratedAuthMode=impersonated, resources=[...aplikace...]
+```
+
+## Otevřené otázky
+
+1. Jaký je přesný typ AD trustu ACR ↔ FIS.ACR? (Forest trust, external trust, nebo žádný?)
+2. Fungovalo by alternativní řešení: uložit service account credentials a volat FISAuth IntegratedWindows jako service account (process-level)?
+3. Je možné nasadit CitrixComponent přímo na server v FIS.ACR doméně?
+
+## Rules still active
+
+- `AllowAutoRedirect = false` mandatory
+- CSRF token re-read po každém hopu
+- Czech strings preserved
+- Page headers (bez `X-Requested-With`) pro navigaci; API headers pro `/Resources/*`, `/Authentication/*`
+- Kerberos je nyní relevantní pro first hop (IIS auth), ale NESOUVISÍ s HTTP Auth layer vůči StoreFrontu
 
 ## Next session plan
 
-1. **Deploy**: `rm -rf ./publish && dotnet publish -c Release -o ./publish` → copy to server
-2. **Probe CitrixAuth**: call `POST /api/citrix-diagnostics/citrixauth-probe` from browser console:
-   ```js
-   fetch('/api/citrix-diagnostics/citrixauth-probe', {method:'POST'}).then(r=>r.json()).then(console.log)
-   ```
-3. **Analyze response** — expect XML describing CitrixAuth token challenge/protocol
-4. **Implement**: based on response, add CitrixAuth-based SSO endpoint to `Program.cs`
-5. **Do NOT** propose Kerberos/RBCD/SPN unless mitmproxy traffic contains `Authorization: Negotiate` header
+Pokud chce uživatel pokračovat v kódu bez Kerberos:
+- Alternativa A: `process-fallback` mode jako vědomá feature — SSO pod service accountem (ne uživatelsky) — pro scénáře kde všichni mají stejné aplikace
+- Alternativa B: zachovat explicit-login flow (uživatel zadá heslo jednou) + implementovat SSO jako optional enhancement
 
-## Rules still active
-- No Kerberos proposals without mitmproxy evidence of `Authorization: Negotiate` (see failed-approaches.md)
-- Czech strings preserved in API responses and form values
-- `AllowAutoRedirect = false` mandatory
-- CSRF token re-read after every hop
-
-## End-goal architecture
-1. ✅ PoC functional
-2. ⏳ Publish + deploy test on deployment server
-3. ⏳ CitrixAuth-based SSO (token-based, NOT Kerberos) — probe response needed first
-4. ⏳ Web component refactor — `<citrix-tiles>` custom element
-5. Final: production hardening (Redis cache, CSRF on portal endpoints)
-
-## For next Claude session
-Read `CLAUDE.md` → `current-task.md` → this file. First action: deploy and call the citrixauth-probe endpoint. Report the `{status, headers, body}` response. That response determines all SSO code.
+Pokud AD tým vyřeší Kerberos:
+1. Ověřit `klist get HTTP/vxxxx22fisxvi15.fis.acr` → musí projít
+2. Ověřit `/api/whoami` → `isKerberos=True`
+3. V C# přidat `WindowsIdentity.RunImpersonated` kolem kroku 4 (IntegratedWindows volání)
+4. Ověřit `/api/citrix-sso/login` → `integratedAuthMode=impersonated`

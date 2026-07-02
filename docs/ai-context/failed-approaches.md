@@ -154,7 +154,7 @@ Do not `git add` `.sln` files in this repo. If a `.sln` exists locally for IDE u
 
 ---
 
-## 2026-05-13 — Navrhování Kerberos/delegace bez důkazu z traffic
+## 2026-05-13 — Navrhování Kerberos/delegace bez důkazu z traffic (původní chyba)
 
 Context:
 Implementace AD SSO pro automatické přihlášení přes Citrix StoreFront.
@@ -168,8 +168,59 @@ Observed failure:
 Root cause:
 Předpoklad že SSO = Kerberos, bez ověření reálného traffic z Workspace App.
 
+**UPDATE 2026-06-22:**
+Kerberos JE relevantní, ale jinak než se původně navrhoval:
+- NENÍ potřeba pro HTTP auth vůči StoreFrontu (CitrixAuth je token-based, potvrzeno mitmproxy)
+- JE potřeba pro first hop: uživatel ACR\VanD → IIS na VXXXX22FISXVI15 (FIS.ACR), aby IIS mohl impersonovat uživatele
+- Bez Kerberos na first hopu nelze volat FISAuth IntegratedWindows endpoint jako skutečný uživatel
+
 Do instead:
-Nejdřív zachytit mitmproxy traffic z Workspace App při domain pass-through loginu. Teprve po analýze traffic napsat kód.
+Pokud navrhovat Kerberos, vždy specifikovat kontext: first hop (IIS auth), ne StoreFront HTTP auth.
+`WindowsIdentity.RunImpersonated` je správná technika pro krok 4 — ale funguje pouze pokud IIS dostane Kerberos token (ne NTLM).
 
 Do not repeat:
-Nenavrhovat Kerberos/RBCD/SPN/delegaci dokud uživatel nepřinese mitmproxy traffic který to potvrdí.
+- Nenavrhovat Kerberos jako `Authorization: Negotiate` header vůči StoreFrontu
+- Nenavrhovat SPN/RBCD jako primární fix bez ověření cross-domain trust ACR ↔ FIS.ACR
+
+---
+
+## 2026-06-22/23 — Server-to-server backend SSO s UseDefaultCredentials (i15 → 07)
+
+Status: superseded by 2026-07-02 — SSO řešeno přes sso.html popup bridge (viz `decisions.md`).
+
+Context:
+Implementace `/api/citrix-sso/login` v `Program.cs` — backend na i15 volá 8-krokový CitrixAuth+FISAuth+IntegratedWindows flow server-to-server proti StoreFrontu na serveru 07, s `HttpClientHandler.UseDefaultCredentials = true`.
+
+Tried:
+Backend endpoint technicky prošel celý flow (`loginSucceeded=True`, `resourcesStatusCode=200`).
+
+Observed failure:
+`integratedAuthMode=process-fallback` — autentizace proběhla jako identita IIS app poolu (doména ACR), ne jako přihlášený uživatel. `klist get HTTP/vxxxx22fisxvi15.fis.acr` selhává (`0xc000018b`), `/api/whoami` ukazuje `isKerberos=False`.
+
+Root cause:
+Cross-domain Kerberos ACR → FIS.ACR — uživatel v doméně ACR nemůže získat Kerberos ticket pro službu v doméně FIS.ACR bez fungujícího cross-forest trustu/delegace. Toto je AD/infrastrukturní otázka, ne kódová.
+
+Do instead:
+Použít `sso.html` na serveru 07 (`https://vxxxx22fisxva07.fis.acr/Citrix/FISWeb/custom/sso.html`) jako popup bridge — celý flow proběhne same-origin v prohlížeči uživatele, žádný cross-domain server-to-server hop není potřeba.
+
+Do not repeat:
+Znovu navrhovat nebo implementovat server-to-server backend endpoint s `UseDefaultCredentials=true` volající StoreFront na serveru 07 jako řešení user-level SSO — vždy skončí v `process-fallback` módu, dokud AD tým nevyřeší cross-domain Kerberos trust.
+
+---
+
+## 2026-06-22 — BackConnectionHostNames pro cross-domain Kerberos
+
+Context:
+`klist get HTTP/vxxxx22fisxvi15.fis.acr` selhává, `/api/whoami` ukazuje `isKerberos=False`.
+
+Tried:
+Nastavení `BackConnectionHostNames` registry klíče na serveru VXXXX22FISXVI15 + restart w3svc.
+
+Observed failure:
+`/api/whoami` stále ukazuje `isKerberos=False, impersonationLevel=None`.
+
+Root cause:
+BackConnectionHostNames řeší loopback auth (server volá sám sebe). Problém je cross-domain: uživatel vand@ACR nedokáže získat Kerberos ticket pro službu v FIS.ACR doméně. Chyba `0xc000018b` indikuje trust/referral problém na úrovni KDC, ne loopback.
+
+Do not repeat:
+BackConnectionHostNames jako fix pro cross-domain Kerberos — nesouvisí.

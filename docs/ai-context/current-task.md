@@ -1,61 +1,56 @@
 # Current task
 
-Last updated: 2026-05-14
+Last updated: 2026-06-22
 
 ## Objective
-Implement AD SSO — automatic Citrix login using the user's Windows domain identity, without manual password entry. PoC explicit-auth flow is fully functional. Next milestone: replicate CitrixAuth token-based flow.
 
-## Current status — CitrixAuth probe added, awaiting test
+Implementovat AD SSO — automatické přihlášení do Citrixu pomocí Windows doménové identity uživatele, bez ručního zadání hesla.
 
-mitmproxy capture confirmed Workspace App hits `CitrixAuth/Login` (NOT `DomainPassthroughAuth`):
+## Current status — flow hotový v C#, blokuje cross-domain Kerberos
 
-```
-POST /Citrix/FISWeb/CitrixAuth/Login HTTP/1.1
-X-Citrix-Background-Request: True
-X-Citrix-IsUsingHTTPS: Yes
-Content-Length: 0
-User-Agent: CitrixReceiver/26.3.0.95 Windows/10.0 SelfService/26.3.0.96
-```
+### Co funguje
+- 8-krokový CitrixAuth + FISAuth + IntegratedWindows flow je ověřen v PowerShellu jako ACR\VanD
+- C# endpoint `/api/citrix-sso/login` flow technicky projde (`loginSucceeded=True`, `resourcesStatusCode=200`)
+- Krok 4 (IntegratedWindows volání s `UseDefaultCredentials`) funguje jako process fallback
 
-No `Authorization` header → NOT Kerberos/NTLM at this layer. CitrixAuth is token-based, not SPNEGO.
+### Co nefunguje
+- `integratedAuthMode=process-fallback` místo `impersonated` — volá se pod app poolem
+- `klist get HTTP/vxxxx22fisxvi15.fis.acr` selhává pro uživatele vand@ACR (cross-domain)
+- `/api/whoami` → `isKerberos=False, impersonationLevel=None`
 
-New endpoint added to `Program.cs:1524`:
-- `POST /api/citrix-diagnostics/citrixauth-probe` — fires exact Workspace App headers at `CitrixAuth/Login`, returns `{status, headers, body}`
+### Blokátor
+Cross-domain Kerberos ACR → FIS.ACR. Toto je AD/infrastruktura otázka, ne kódová.
 
-**Not yet deployed/tested.** Build clean (`dotnet build` 0 errors).
+## Dostupné alternativy (pokud Kerberos nejde vyřešit rychle)
 
-## Endpoints (current full list)
-- `POST /api/citrix-diagnostics/explicit-login` — full auth + Resources/List + session token
+**Alternativa A — process-fallback jako feature:**
+Přijmout že SSO proběhne pod service accountem app poolu, ne uživatelsky. Vrátí aplikace přiřazené tomu service accountu v Citrixu. Použitelné pokud jsou všichni uživatelé homogenní.
+
+**Alternativa B — hybrid flow:**
+Zachovat explicit-login (uživatel zadá heslo jednou) + CitrixAuth SSO jako optional. Browser může cachovat session.
+
+**Alternativa C — čekat na AD tým:**
+AD tým musí vyřešit cross-domain trust / Kerberos referral. Pak přidat `WindowsIdentity.RunImpersonated` v C# kolem kroku 4.
+
+## Endpoints (aktuální)
+
+- `POST /api/citrix-sso/login` — **SSO endpoint** (process-fallback mode, čeká na Kerberos)
+- `POST /api/citrix-diagnostics/explicit-login` — full explicit auth + Resources/List + session token
 - `GET /api/citrix-diagnostics/server-probe` — bootstrap chain probe
-- `POST /api/citrix-diagnostics/citrixauth-probe` — **NEW** — probe CitrixAuth/Login with Workspace App headers
-- `GET /api/citrix-proxy?session=<token>&path=<rel>` — authenticated proxy (anti-SSRF: path must start with `Resources/`)
-- `GET /api/citrix-launch-status` — rewrites fileFetchUrl host
+- `POST /api/citrix-diagnostics/citrixauth-probe` — probe CitrixAuth/Login s Workspace App hlavičkami
+- `GET /api/whoami` — diagnostika Windows identity (isKerberos, impersonationLevel)
+- `GET /api/citrix-proxy?session=<token>&path=<rel>` — proxy (anti-SSRF whitelist)
+- `GET /api/citrix-launch-status` — přepisuje fileFetchUrl host
 - `POST /api/client-log` — browser console relay
 
-## Immediate next steps
-1. `dotnet publish -c Release -o ./publish` → deploy to server
-2. Call probe: `fetch('/api/citrix-diagnostics/citrixauth-probe', {method:'POST'}).then(r=>r.json()).then(console.log)`
-3. Analyze response — expect XML describing CitrixAuth token protocol
-4. Based on response, implement CitrixAuth-based SSO in `Program.cs`
+## Cílový výstup po vyřešení Kerberos
 
-## Architecture (locked-in)
+```json
+{
+  "ok": true,
+  "loginSucceeded": true,
+  "integratedAuthMode": "impersonated",
+  "resourcesStatusCode": 200,
+  "resourcesPreview": "{...aplikace uživatele...}"
+}
 ```
-Browser ──POST login─→ Portal ──server-side auth dance─→ StoreFront
-                         │
-                         ├─ IMemoryCache: GUID → CookieContainer + storeRootUri (20 min sliding TTL)
-                         │
-Browser ──klik─────────→ Portal /api/citrix-proxy?session=<GUID>&path=Resources/...
-                         │
-                         └─ Cached cookies → GET StoreFront → proxy bytes back
-```
-
-## Security
-- Cookies (auth tokens) NEVER reach browser — server-side only
-- Browser holds only opaque GUID
-- Password never logged (only username + domain)
-- Path whitelist on proxy blocks SSRF
-
-## Commands
-- `rm -rf ./publish && dotnet publish -c Release -o ./publish`
-- `dotnet build`
-- Probe call: `fetch('/api/citrix-diagnostics/citrixauth-probe', {method:'POST'}).then(r=>r.json()).then(console.log)`

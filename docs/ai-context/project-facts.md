@@ -183,6 +183,53 @@ Fake/aspirational test runs.
 
 ---
 
+## 2026-06-22 — DomainPassthroughAuth/Login funguje na pool úrovni z IIS
+
+Fact:
+`POST /Citrix/FISWeb/DomainPassthroughAuth/Login` s `UseDefaultCredentials=true` z IIS aplikace úspěšně vrátí `<Result>success</Result>` — přihlašuje se jako identity app poolu (service account), ne jako konkrétní uživatel.
+
+Why it matters:
+Tento přístup je jednodušší než 8-krokový CitrixAuth+FISAuth flow pro pool-level auth. Ale platí to samé omezení jako u `process-fallback` módu — Resources/List vrátí aplikace service accountu, ne přihlášeného uživatele.
+
+Do this:
+Pokud je cílem pool-level auth (všichni uživatelé vidí stejné aplikace), `DomainPassthroughAuth/Login` může být jednodušší alternativa. Ale bootstrap chain (GET `/Citrix/FISWeb/` → cookies → CsrfToken) musí proběhnout před voláním.
+
+Confirmed (2026-06-22):
+`Resources/List` po `DomainPassthroughAuth/Login` z IIS vrátil aplikace — ty jsou přiřazené service accountu app poolu v Citrixu.
+
+Avoid:
+Záměna pool-level auth s user-level SSO — `DomainPassthroughAuth/Login` neřeší cross-domain Kerberos problém a nepřihlašuje jako skutečný uživatel.
+
+---
+
+## 2026-06-22 — 8-krokový FISAuth flow (ověřeno PowerShell jako ACR\VanD)
+
+Fact:
+Citrix SSO v tomto prostředí probíhá přes CitrixAuth + FISAuth + IntegratedWindows. Postup:
+
+1. POST `CitrixAuth/Login` (prázdné tělo, Workspace App UA) → 401 + `WWW-Authenticate: CitrixAuth realm=... locations=<tokenUrl>`
+2. POST `<tokenUrl>` s requesttoken XML → 401 + `locations=<protocolsUrl>`, `serviceroot-hint=<tokenServiceUrl>`
+3. POST `<protocolsUrl>` s requesttoken XML → XML choices → vybrat `IntegratedWindows` → `<integratedUrl>`
+4. POST `<integratedUrl>` s requesttoken XML + `UseDefaultCredentials=true` → innerToken
+5. POST `<tokenUrl>` s requesttoken XML + `Authorization: CitrixAuth <innerToken>` → outerToken/loginToken
+6. POST `CitrixAuth/Login` s `Authorization: CitrixAuth <loginToken>` → `<Result>success</Result>`
+7. GET `https://pnagent.fis.acr/Citrix/FISWeb/` (page headers, browser UA) → cookies + CsrfToken
+8. POST `Resources/List` (format=json, Csrf-Token header) → seznam aplikací
+
+Endpoints:
+- Token: `https://pnagent.fis.acr/Citrix/FISAuth/auth/v1/token`
+- Protocols: `https://pnagent.fis.acr/Citrix/FISAuth/auth/v1/protocols`
+- IntegratedWindows: `https://pnagent.fis.acr/Citrix/FISAuth/Integrated/Authenticate`
+
+Why it matters:
+Krok 4 vyžaduje `UseDefaultCredentials=true` → volající musí mít Kerberos token. Z app poolu funguje jako process fallback (vrátí prázdné resources). Pro uživatelské SSO musí IIS impersonovat uživatele.
+
+requesttoken XML namespace: `http://citrix.com/delivery-services/1-0/auth/requesttoken`
+response namespace: `http://citrix.com/delivery-services/1-0/auth/requesttokenresponse`
+choices namespace: `http://citrix.com/delivery-services/1-0/auth/requesttokenchoices`
+
+---
+
 ## 2026-05-14 — Workspace App domain pass-through uses `CitrixAuth/Login`, NOT DomainPassthroughAuth
 
 Fact:

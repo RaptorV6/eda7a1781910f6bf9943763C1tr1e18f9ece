@@ -164,46 +164,6 @@
         color: #047857;
     }
 
-    .citrix-login-form {
-        margin-bottom: 1rem;
-        border: 1px solid #d9e2ec;
-        border-radius: 0.85rem;
-        background: #f8fafc;
-        padding: 1rem;
-    }
-
-    .citrix-login-grid {
-        display: grid;
-        gap: 0.85rem;
-        grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-    }
-
-    .citrix-login-field {
-        display: flex;
-        flex-direction: column;
-        gap: 0.35rem;
-    }
-
-    .citrix-login-field label {
-        font-weight: 600;
-        color: #243b53;
-    }
-
-    .citrix-login-field input {
-        border: 1px solid #cbd5e1;
-        border-radius: 0.65rem;
-        padding: 0.7rem 0.8rem;
-        background: #ffffff;
-    }
-
-    .citrix-login-actions {
-        margin-top: 0.85rem;
-        display: flex;
-        align-items: center;
-        gap: 0.75rem;
-        flex-wrap: wrap;
-    }
-
     .citrix-login-button {
         border: 0;
         border-radius: 0.65rem;
@@ -211,6 +171,7 @@
         color: #ffffff;
         font-weight: 700;
         padding: 0.75rem 1rem;
+        cursor: pointer;
     }
 
     .citrix-login-button:disabled {
@@ -218,9 +179,43 @@
         cursor: wait;
     }
 
-    .citrix-login-hint {
+    .citrix-spinner {
+        display: flex;
+        align-items: center;
+        gap: 0.75rem;
+        margin: 0.5rem 0 1rem;
         color: #52606d;
         font-size: 0.95rem;
+    }
+
+    .citrix-spinner.d-none {
+        display: none;
+    }
+
+    .citrix-spinner-dot {
+        width: 1.15rem;
+        height: 1.15rem;
+        border: 3px solid #cbd5e1;
+        border-top-color: #0f766e;
+        border-radius: 50%;
+        animation: citrix-spin 0.8s linear infinite;
+        flex-shrink: 0;
+    }
+
+    @@keyframes citrix-spin {
+        to { transform: rotate(360deg); }
+    }
+
+    @@media (prefers-reduced-motion: reduce) {
+        .citrix-spinner-dot { animation-duration: 2s; }
+    }
+
+    .citrix-retry {
+        margin: 0.5rem 0 1rem;
+    }
+
+    .citrix-retry.d-none {
+        display: none;
     }
 
     .citrix-app-list {
@@ -492,27 +487,16 @@
         </div>
     </details>
 
-    <form id="citrix-login-form" class="citrix-login-form">
-        <div class="citrix-login-grid">
-            <div class="citrix-login-field">
-                <label for="citrix-username">Uživatelské jméno</label>
-                <input id="citrix-username" name="username" type="text" autocomplete="username" spellcheck="false" />
-            </div>
-            <div class="citrix-login-field">
-                <label for="citrix-password">Heslo</label>
-                <input id="citrix-password" name="password" type="password" autocomplete="current-password" />
-            </div>
-            <div class="citrix-login-field">
-                <label for="citrix-domain">Doména</label>
-                <input id="citrix-domain" name="domain" type="text" value="acr" spellcheck="false" />
-            </div>
-        </div>
-        <div class="citrix-login-actions">
-            <button id="citrix-login-button" class="citrix-login-button" type="submit">Přihlásit</button>
-        </div>
-    </form>
-
     <div id="citrix-status" class="citrix-diagnostics-status" data-level="info"></div>
+
+    <div id="citrix-spinner" class="citrix-spinner" role="status" aria-live="polite">
+        <span class="citrix-spinner-dot" aria-hidden="true"></span>
+        <span class="citrix-spinner-label">Načítám vaše aplikace…</span>
+    </div>
+
+    <div id="citrix-retry" class="citrix-retry d-none">
+        <button type="button" id="citrix-retry-button" class="citrix-login-button">Zkusit znovu</button>
+    </div>
 
     <div id="citrix-apps">
         <ul id="citrix-app-list" class="citrix-app-list"></ul>
@@ -533,15 +517,38 @@
                 return;
             }
 
+            // Strategie tichého SSO. "bridge" = celý ověřený flow běží same-origin
+            // uvnitř skrytého iframe na serveru 07 a výsledek přiletí přes postMessage.
+            // "broker" (cross-origin fetch flow z i15) není v tomto buildu — vyžaduje
+            // samostatný citrix-api.js modul + kompletní CORS na 07.
+            const STRATEGY = 'bridge';
+
             const statusElement = document.getElementById('citrix-status');
             const appListElement = document.getElementById('citrix-app-list');
             const emptyStateElement = document.getElementById('citrix-empty-state');
             const logElement = document.getElementById('citrix-log');
-            const loginFormElement = document.getElementById('citrix-login-form');
-            const usernameElement = document.getElementById('citrix-username');
-            const passwordElement = document.getElementById('citrix-password');
-            const domainElement = document.getElementById('citrix-domain');
-            const loginButtonElement = document.getElementById('citrix-login-button');
+            const spinnerElement = document.getElementById('citrix-spinner');
+            const retryElement = document.getElementById('citrix-retry');
+            const retryButtonElement = document.getElementById('citrix-retry-button');
+
+            const showSpinner = (message) => {
+                if (!spinnerElement) {
+                    return;
+                }
+                const label = spinnerElement.querySelector('.citrix-spinner-label');
+                if (label && message) {
+                    label.textContent = message;
+                }
+                spinnerElement.classList.remove('d-none');
+            };
+
+            const hideSpinner = () => {
+                spinnerElement?.classList.add('d-none');
+            };
+
+            const showRetry = (visible) => {
+                retryElement?.classList.toggle('d-none', !visible);
+            };
 
             const rawBaseUrl = (root.dataset.baseUrl || '').trim();
             const normalizedBaseUrl = rawBaseUrl ? rawBaseUrl.replace(/\/?$/, '/') : '';
@@ -890,105 +897,10 @@
                 return configuration;
             };
 
-            const renderApplications = (resources, sessionToken) => {
-                appListElement.innerHTML = '';
-                emptyStateElement.classList.add('d-none');
-                emptyStateElement.textContent = '';
-
-                const proxyUrl = (relPath) =>
-                    `/api/citrix-proxy?session=${encodeURIComponent(sessionToken)}&path=${encodeURIComponent(relPath)}`;
-
-                for (const resource of resources) {
-                    const iconUrl = resource.iconurl ? proxyUrl(resource.iconurl) : '';
-                    const launchPath = resource.launchurl;
-
-                    const listItem = document.createElement('li');
-                    listItem.className = 'citrix-app-item';
-                    listItem.style.cursor = launchPath ? 'pointer' : 'default';
-                    listItem.title = launchPath ? `Spustit: ${resource.name}` : '(launchurl chybí)';
-
-                    const image = document.createElement('img');
-                    image.className = 'citrix-app-icon';
-                    image.alt = resource.name || 'Citrix aplikace';
-                    image.loading = 'lazy';
-                    image.referrerPolicy = 'no-referrer';
-                    image.src = iconUrl || 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw==';
-                    image.addEventListener('error', () => {
-                        log.warn('IconLoad', `Ikona se nepodařila načíst pro "${resource.name || '(bez názvu)'}": ${iconUrl || '(prázdná iconurl)'}`);
-                    });
-
-                    const name = document.createElement('div');
-                    name.className = 'citrix-app-name';
-                    name.textContent = resource.name || '(bez názvu)';
-
-                    if (launchPath) {
-                        listItem.addEventListener('click', async () => {
-                            log.info('Launch', `Klik na "${resource.name}".`);
-
-                            // Primary path: receiver:// protocol handoff. Mirrors official StoreFront SPA.
-                            // Constructs receiver:// URL with launch params (action, ticket, version) base64-encoded.
-                            // Browser invokes Citrix Workspace Launcher (nglauncher.exe / Workspace App) directly
-                            // via OS protocol handler — no ICA download, no download bar.
-                            const match = launchPath.match(/Resources\/LaunchIca\/([^.\/]+)\.ica$/i);
-                            if (match && sessionToken) {
-                                const resourceId = match[1];
-                                try {
-                                    const statusResp = await fetch(
-                                        `/api/citrix-launch-status?session=${encodeURIComponent(sessionToken)}&resourceId=${encodeURIComponent(resourceId)}`,
-                                        { method: 'POST' });
-                                    if (statusResp.ok) {
-                                        const status = await statusResp.json();
-                                        if (status?.fileFetchUrl && status?.fileFetchTicket) {
-                                            const params = [
-                                                'action=launch',
-                                                `serverProtocolVersion=${status.serverProtocolVersion ?? '1'}`,
-                                                'transport=https',
-                                                `ticket=${status.fileFetchTicket}`
-                                            ].join('&');
-                                            const paramsB64 = btoa(params);
-                                            const receiverUrl = status.fileFetchUrl.replace(/^https?:\/\//, 'receiver://') + '/' + paramsB64;
-                                            log.info('Launch', `Spouštím přes receiver:// (silent handoff): ${receiverUrl.substring(0, 120)}…`);
-                                            window.location.href = receiverUrl;
-                                            return;
-                                        }
-                                    }
-                                    log.warn('Launch', `GetLaunchStatus nedal validní data, fallback na ICA download.`);
-                                } catch (e) {
-                                    log.warn('Launch', `receiver:// path failed (${e}), fallback na ICA download.`);
-                                }
-                            }
-
-                            // Fallback: iframe ICA download (visible download bar without browser GPO/setting).
-                            const launcher = document.createElement('iframe');
-                            launcher.style.display = 'none';
-                            launcher.src = proxyUrl(launchPath);
-                            document.body.appendChild(launcher);
-                            setTimeout(() => { try { launcher.remove(); } catch {} }, 10000);
-                        });
-                    }
-
-                    listItem.appendChild(image);
-                    listItem.appendChild(name);
-                    appListElement.appendChild(listItem);
-                }
-            };
-
             const showEmptyState = (message) => {
                 appListElement.innerHTML = '';
                 emptyStateElement.textContent = message;
                 emptyStateElement.classList.remove('d-none');
-            };
-
-            const extractResources = (payload) => {
-                if (Array.isArray(payload)) {
-                    return payload;
-                }
-
-                if (Array.isArray(payload?.resources)) {
-                    return payload.resources;
-                }
-
-                return null;
             };
 
             const looksLikeUnauthorized = (response, responseText) => {
@@ -1007,98 +919,6 @@
                     || body.includes('log on')
                     || finalUrl.includes('/authentication/')
                     || finalUrl.includes('/explicitauth/');
-            };
-
-            const setLoginFormDisabled = (disabled) => {
-                if (!loginFormElement) {
-                    return;
-                }
-
-                for (const element of loginFormElement.elements) {
-                    element.disabled = disabled;
-                }
-            };
-
-            const runServerSideLogin = async () => {
-                if (!serverLoginEndpoint) {
-                    throw new Error('Server login endpoint není nastaven.');
-                }
-
-                const username = (usernameElement?.value || '').trim();
-                const password = passwordElement?.value || '';
-                const domain = (domainElement?.value || '').trim();
-
-                if (!username || !password || !domain) {
-                    throw new Error('Vyplňte uživatelské jméno, heslo i doménu.');
-                }
-
-                log.info('ExplicitLogin', `Spouštím server-side explicit login přes ${serverLoginEndpoint}`);
-                log.info('ExplicitLogin', `Odesílám username=${username}, domain=${domain}. Heslo se do logu nepropaguje.`);
-
-                const response = await fetch(serverLoginEndpoint, {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json'
-                    },
-                    body: JSON.stringify({
-                        requestId,
-                        storeRootUrl: normalizedBaseUrl,
-                        username,
-                        password,
-                        domain
-                    })
-                });
-
-                const responseText = await response.text();
-                let payload;
-
-                try {
-                    payload = JSON.parse(responseText);
-                } catch (error) {
-                    throw new Error(`Server login vrátil nevalidní JSON: ${truncate(responseText)}`);
-                }
-
-                log.info('ExplicitLogin', `Server-side explicit login výsledek: ${getSafeJsonPreview(payload)}`);
-                return payload;
-            };
-
-            const explainExplicitLogin = (payload) => {
-                if (!payload) {
-                    return;
-                }
-
-                if (payload.bootstrapRedirectUrl) {
-                    log.info('ExplicitLogin', `Bootstrap redirect URL: ${payload.bootstrapRedirectUrl}`);
-                }
-
-                if (payload.bootstrapFinalUrl) {
-                    log.info('ExplicitLogin', `Bootstrap final URL: ${payload.bootstrapFinalUrl}`);
-                }
-
-                if (Array.isArray(payload.authMethodCandidates) && payload.authMethodCandidates.length > 0) {
-                    log.info('ExplicitLogin', `Auth method kandidáti: ${payload.authMethodCandidates.join(' | ')}`);
-                } else {
-                    log.warn('ExplicitLogin', 'GetAuthMethods nevrátil žádný rozpoznaný auth endpoint.');
-                }
-
-                if (Array.isArray(payload.loginAttemptResults) && payload.loginAttemptResults.length > 0) {
-                    payload.loginAttemptResults.forEach((attempt, index) => {
-                        log.info('ExplicitLogin', `Login attempt ${index + 1}: ${attempt}`);
-                    });
-                }
-
-                if (payload.authResult) {
-                    log.info('ExplicitLogin', `Auth result: ${payload.authResult}`);
-                }
-
-                if (payload.loginErrorText) {
-                    log.warn('ExplicitLogin', `Citrix error text: ${payload.loginErrorText}`);
-                }
-
-                logMultilineBlock('ExplicitLogin', 'AuthMethods preview', payload.authMethodsPreview);
-                logMultilineBlock('ExplicitLogin', 'Bootstrap landing preview', payload.bootstrapLandingPreview);
-                logMultilineBlock('ExplicitLogin', 'Login form preview', payload.loginFormPreview);
-                logMultilineBlock('ExplicitLogin', 'Login submit preview', payload.loginSubmitPreview);
             };
 
             const renderBridgeApplications = (resources, bridgeStoreRootUrl) => {
@@ -1161,6 +981,9 @@
                 }
             };
 
+            // Tiché SSO: celý ověřený flow běží same-origin uvnitř skrytého iframe na 07.
+            // Iframe je display:none (žádný popup, žádný viditelný prvek), žije jen po dobu
+            // flow a hned se z DOM odstraní. Výsledek přiletí přes postMessage.
             const runSsoBridgeLogin = () => new Promise((resolve, reject) => {
                 if (!ssoBridgeUrl) {
                     reject(new Error('SSO bridge URL není nastavena.'));
@@ -1175,21 +998,21 @@
                     return;
                 }
 
-                const popup = window.open(ssoBridgeUrl, 'citrix-sso-bridge', 'width=1000,height=760');
-                if (!popup) {
-                    reject(new Error('Prohlížeč zablokoval popup okno pro SSO přihlášení. Povolte popupy pro tuto stránku a zkuste to znovu.'));
-                    return;
-                }
-
                 let settled = false;
+
+                const frame = document.createElement('iframe');
+                frame.style.display = 'none';
+                frame.setAttribute('aria-hidden', 'true');
+                frame.title = 'Citrix SSO';
 
                 const cleanup = () => {
                     window.removeEventListener('message', onMessage);
-                    clearInterval(closedCheckInterval);
                     clearTimeout(timeoutHandle);
+                    try { frame.remove(); } catch {}
                 };
 
                 const onMessage = (event) => {
+                    // Origin kontrola: přijímej výsledek POUZE z origin bridge (server 07).
                     if (event.origin !== bridgeOrigin) {
                         return;
                     }
@@ -1200,7 +1023,6 @@
 
                     settled = true;
                     cleanup();
-                    try { popup.close(); } catch {}
 
                     if (event.data.ok) {
                         resolve({
@@ -1212,78 +1034,18 @@
                     }
                 };
 
-                const closedCheckInterval = setInterval(() => {
-                    if (popup.closed && !settled) {
-                        settled = true;
-                        cleanup();
-                        reject(new Error('SSO okno bylo zavřeno před dokončením přihlášení.'));
-                    }
-                }, 500);
-
                 const timeoutHandle = setTimeout(() => {
                     if (!settled) {
                         settled = true;
                         cleanup();
-                        try { popup.close(); } catch {}
-                        reject(new Error('SSO přihlášení vypršelo (timeout 60 s).'));
+                        reject(new Error('SSO přihlášení vypršelo (timeout 30 s).'));
                     }
-                }, 60000);
+                }, 30000);
 
                 window.addEventListener('message', onMessage);
+                frame.src = ssoBridgeUrl;
+                document.body.appendChild(frame);
             });
-
-            const handleLoginSubmit = async (event) => {
-                event.preventDefault();
-
-                appListElement.innerHTML = '';
-                emptyStateElement.classList.add('d-none');
-                emptyStateElement.textContent = '';
-
-                try {
-                    setLoginFormDisabled(true);
-                    setStatus('Probíhá server-side Citrix login…', 'info');
-
-                    const payload = await runServerSideLogin();
-                    explainExplicitLogin(payload);
-
-                    if (!payload.ok) {
-                        throw new Error(payload.errorMessage || payload.message || 'Server-side Citrix login selhal.');
-                    }
-
-                    if (!payload.loginSucceeded) {
-                        setStatus('Přihlášení do Citrixu nebylo dokončeno.', 'warn');
-                        showEmptyState(payload.message || 'Citrix nevrátil success pro explicit login.');
-                        return;
-                    }
-
-                    const resources = extractResources(payload.resourcesPayload);
-                    if (!resources) {
-                        setStatus('Přihlášení proběhlo, ale seznam aplikací není validní.', 'warn');
-                        showEmptyState('Citrix login proběhl, ale Resources/List vrátil nečekaný formát.');
-                        return;
-                    }
-
-                    if (resources.length === 0) {
-                        setStatus('Přihlášení proběhlo, ale uživatel nemá žádné aplikace.', 'warn');
-                        showEmptyState('Citrix login proběhl, ale seznam aplikací je prázdný.');
-                        return;
-                    }
-
-                    if (!payload.sessionToken) {
-                        setStatus('Login OK ale session token chybí — proxy nebude fungovat.', 'warn');
-                    }
-                    renderApplications(resources, payload.sessionToken || '');
-                    setStatus(`Načteno ${resources.length} aplikací. Klik na dlaždici spustí ICA.`, 'success');
-                    log.info('ExplicitLogin', `Aplikace načteny. Počet: ${resources.length}. SessionToken: ${payload.sessionToken ? '(přítomen)' : '(CHYBÍ)'}`);
-                } catch (error) {
-                    const message = error instanceof Error ? error.message : String(error);
-                    setStatus('Server-side Citrix login selhal.', 'error');
-                    showEmptyState(message);
-                    log.error('ExplicitLogin', message);
-                } finally {
-                    setLoginFormDisabled(false);
-                }
-            };
 
             const openDiagnosticsPanel = () => {
                 const diagDetails = document.querySelector('.citrix-diagnostics-details');
@@ -1331,50 +1093,62 @@
                 log.info('Init', `Browser origin: ${window.location.origin}`);
                 log.info('Init', `Citrix URL origin: ${normalizedBaseUrl ? new URL(normalizedBaseUrl).origin : '(není nastaveno)'}`);
 
-                if (!normalizedBaseUrl) {
-                    setStatus('Citrix BaseUrl není nastavená.', 'error');
-                    log.error('Init', 'Konfigurace CitrixDiagnostics:BaseUrl chybí. Requesty se nespustí.');
-                    showEmptyState('Chybí konfigurace Citrix URL.');
+                wireApiToolButtons();
+
+                if (retryButtonElement) {
+                    retryButtonElement.addEventListener('click', () => { void startSso(); });
+                }
+
+                await startSso();
+            };
+
+            const startSso = async () => {
+                showRetry(false);
+                appListElement.innerHTML = '';
+                emptyStateElement.classList.add('d-none');
+                emptyStateElement.textContent = '';
+                showSpinner('Načítám vaše aplikace…');
+                setStatus('Probíhá tiché přihlášení…', 'info');
+
+                if (STRATEGY !== 'bridge') {
+                    hideSpinner();
+                    setStatus('Neznámá strategie SSO.', 'error');
+                    showEmptyState(`STRATEGY "${STRATEGY}" není v tomto buildu implementována — použijte "bridge".`);
                     return;
                 }
 
-                const httpsHeaderValue = normalizedBaseUrl.startsWith('https://') ? 'Yes' : 'No';
-                log.info('Init', `X-Citrix-IsUsingHTTPS bude odeslán s hodnotou "${httpsHeaderValue}".`);
-                log.info('Init', 'CitrixComponent teď čeká na ručně odeslaný explicit login formulář. Browser už nezkouší přímé cross-origin fetch requesty do Citrixu.');
+                if (!ssoBridgeUrl) {
+                    hideSpinner();
+                    setStatus('SSO bridge URL není nastavena.', 'error');
+                    log.error('SsoBridge', 'Konfigurace CitrixDiagnostics:SsoBridgeUrl chybí.');
+                    showEmptyState('Chybí konfigurace SSO bridge URL.');
+                    return;
+                }
 
-                wireApiToolButtons();
+                try {
+                    log.info('SsoBridge', `Spouštím tiché SSO přes skrytý iframe: ${ssoBridgeUrl}`);
+                    const { resources, bridgeOrigin } = await runSsoBridgeLogin();
+                    hideSpinner();
+                    log.info('SsoBridge', `SSO bridge výsledek: ${resources.length} aplikací, origin=${bridgeOrigin}`);
 
-                if (ssoBridgeUrl) {
-                    setStatus('Probíhá automatické přihlášení (Windows SSO přes sso.html bridge)…', 'info');
-                    log.info('SsoBridge', `Otevírám SSO bridge popup: ${ssoBridgeUrl}`);
-                    try {
-                        const { resources, bridgeOrigin } = await runSsoBridgeLogin();
-                        log.info('SsoBridge', `SSO bridge výsledek: ${resources.length} aplikací, origin=${bridgeOrigin}`);
-                        if (resources.length > 0) {
-                            const bridgeStoreRootUrl = new URL('../', ssoBridgeUrl).toString();
-                            renderBridgeApplications(resources, bridgeStoreRootUrl);
-                            setStatus(`Načteno ${resources.length} aplikací přes automatické přihlášení.`, 'success');
-                            log.info('SsoBridge', `SSO bridge přihlášení úspěšné. Načteno ${resources.length} aplikací.`);
-                            return;
-                        }
-
-                        log.warn('SsoBridge', 'SSO bridge proběhl, ale uživatel nemá žádné aplikace.');
-                        setStatus('Přihlášení proběhlo, ale uživatel nemá žádné aplikace.', 'warn');
-                        showEmptyState('SSO bridge proběhl, ale seznam aplikací je prázdný.');
-                    } catch (ssoError) {
-                        const msg = ssoError instanceof Error ? ssoError.message : String(ssoError);
-                        log.warn('SsoBridge', `SSO bridge selhal: ${msg}. Zobrazuji formulář pro ruční přihlášení.`);
-                        setStatus('Automatické přihlášení selhalo — zadejte přihlašovací údaje.', 'warn');
+                    if (resources.length > 0) {
+                        const bridgeStoreRootUrl = new URL('../', ssoBridgeUrl).toString();
+                        renderBridgeApplications(resources, bridgeStoreRootUrl);
+                        setStatus(`Načteno ${resources.length} aplikací.`, 'success');
+                        return;
                     }
-                } else {
-                    setStatus('Vyplňte přihlášení a spusťte server-side Citrix login.', 'info');
-                }
 
-                if (loginFormElement) {
-                    loginFormElement.addEventListener('submit', handleLoginSubmit);
+                    log.warn('SsoBridge', 'SSO proběhlo, ale uživatel nemá žádné aplikace.');
+                    setStatus('Přihlášení proběhlo, ale nemáte žádné aplikace.', 'warn');
+                    showEmptyState('SSO proběhlo, ale seznam aplikací je prázdný.');
+                } catch (ssoError) {
+                    const msg = ssoError instanceof Error ? ssoError.message : String(ssoError);
+                    hideSpinner();
+                    log.error('SsoBridge', `SSO bridge selhal: ${msg}`);
+                    setStatus('Automatické přihlášení selhalo.', 'error');
+                    showEmptyState(msg);
+                    showRetry(true);
                 }
-
-                showEmptyState('Zatím nejsou načtené žádné aplikace. Přihlaste se přes formulář výše.');
             };
 
             run().catch((error) => {

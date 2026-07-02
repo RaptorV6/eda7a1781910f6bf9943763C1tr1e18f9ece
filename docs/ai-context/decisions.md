@@ -224,6 +224,13 @@ Affected files/modules:
 - `Pages/Index.cshtml.cs` — `SsoBridgeUrl` config property
 - `appsettings.json::CitrixDiagnostics:SsoBridgeUrl`
 
+**FOLLOW-UP 2026-07-02 — popup → hidden-iframe (silent) přepnuto v kódu, ale BLOKOVÁNO CSP:**
+Na žádost uživatele (žádný popup, žádný viditelný prvek, jen spinner) byl frontend přepsán z `window.open` popupu na **skrytý `display:none` iframe** (`runSsoBridgeLogin`, auto-start `startSso`, spinner + "Zkusit znovu"), formulářové přihlášení + `renderApplications`/`extractResources`/`handleLoginSubmit` odstraněny, `SsoBridgeUrl` → `bridge.min.html`, `STRATEGY = 'bridge'` konstanta. Build 0 chyb.
+**ALE:** iframe embed `sso.html`/`bridge.min.html` je blokovaný `Content-Security-Policy: frame-ancestors 'none'` (viz "Alternatives considered" výše) — CSP frame-ancestors platí pro skrytý iframe stejně jako viditelný. Popup byl top-level okno, proto CSP frame-ancestors neplatil. **Skrytý iframe tedy dnes nefunguje.**
+**OTEVŘENÁ OTÁZKA (rozhoduje o celém směru), zatím neověřeno:** jde `frame-ancestors 'none'` odstranit pro složku `custom\` na serveru 07 přes vlastní `custom\web.config` s `<remove name="Content-Security-Policy" />` (+ `<remove name="X-Frame-Options" />`)? Pokud sekce není zamčená a StoreFront hlavičku přidává přes customHeaders (ne programově v DLL), skrytý iframe se zprovozní a kód je připravený. Druhá podmínka: i15 musí běžet na HTTPS (schemeful same-site pro cookies uvnitř iframe).
+
+**DŮLEŽITÉ — broker/token-relay varianta NEobchází CSP:** Uživatel má tři hotové soubory: `bridge.min.html` (celý flow same-origin v iframe), `token-relay.html` (jen KROK 0 → vrací csrfToken) a `citrix-api.js` (i15 fetch klient: `getSession()` iframuje token-relay + `runFlow()` kroky 1–7 cross-origin fetch). Klíč: `citrix-api.js::getSession()` také načítá `token-relay.html` přes **skrytý iframe** → naráží na **stejný** CSP `frame-ancestors 'none'` jako bridge. JS na i15 nemůže přečíst CsrfToken cookie 07 cross-origin jinak než kódem běžícím na originu 07, a ten se tam dostane jen iframe (CSP-blok) nebo popup (uživatel zamítl). Broker tedy sdílí úplně stejný CSP gate jako bridge, a navíc přidává plný CORS na 07 (Expose-Headers WWW-Authenticate, OPTIONS preflight na FISWeb) = historické 403/HTTP2 minové pole. **Závěr: `bridge.min.html` je jednoznačně lepší cesta** — jeden iframe, žádný CORS, výstupní kontrakt (`citrix-sso-result`) přesně matchuje současný `Pages/Index.cshtml`. Broker má smysl jedině jako plán C, pokud by se ukázalo že iframe s celým flow (krok 4 Negotiate) v iframe nefunguje, ale relay iframe ano — nepravděpodobné.
+
 ---
 
 ## 2026-05-07 — Project renamed CitrixComponent

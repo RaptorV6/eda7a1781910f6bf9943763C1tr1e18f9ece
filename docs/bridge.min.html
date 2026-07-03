@@ -1,0 +1,199 @@
+<!DOCTYPE html>
+<html lang="cs">
+<head><meta charset="utf-8"><title>citrix-bridge</title></head>
+<body>
+<script>
+(async function () {
+  "use strict";
+
+  var PATH = "/Citrix/FISWeb";
+  var BASE = window.location.origin;
+  var LOGIN_URL = BASE + PATH + "/CitrixAuth/Login";
+
+  // Povolené originy rodičovské aplikace (i15)
+  var PARENT_ORIGINS = [
+    "https://vxxxx22fisxvi15.fis.acr:893"
+  ];
+
+  // Volitelný on-demand launch: ?launch=<relativní cesta k .ica, např. Resources/LaunchIca/xxx.ica>
+  var LAUNCH_PATH = new URLSearchParams(window.location.search).get("launch");
+
+  function send(payload) {
+    var target = (window.opener && window.opener !== window) ? window.opener
+               : (window.parent && window.parent !== window) ? window.parent
+               : null;
+    if (!target) { console.log("citrix-bridge result:", payload); return; }
+    for (var i = 0; i < PARENT_ORIGINS.length; i++) {
+      try { target.postMessage(payload, PARENT_ORIGINS[i]); } catch (e) {}
+    }
+  }
+
+  function fail(msg) { send({ type: "citrix-sso-result", ok: false, error: msg }); }
+
+  function getCsrf() {
+    var m = document.cookie.match(/(?:^|;\s*)CsrfToken=([^;]+)/);
+    return m ? decodeURIComponent(m[1]) : "";
+  }
+  function param(challenge, name) {
+    if (!challenge) return null;
+    var m = challenge.match(new RegExp(name + '="([^"]*)"'));
+    return m ? m[1] : null;
+  }
+  function tokenXml(forService, forServiceUrl) {
+    return '<?xml version="1.0" encoding="utf-8"?>' +
+      '<requesttoken xmlns="http://citrix.com/delivery-services/1-0/auth/requesttoken">' +
+      '<for-service>' + forService + '</for-service>' +
+      '<for-service-url>' + forServiceUrl + '</for-service-url>' +
+      '<reqtokentemplate></reqtokentemplate>' +
+      '<requested-lifetime>0.20:00:00</requested-lifetime></requesttoken>';
+  }
+  function tokenFromXml(text) {
+    var xml = new DOMParser().parseFromString(text, "application/xml");
+    var t = xml.getElementsByTagName("token")[0];
+    if (!t) throw new Error("Chybi <token> v odpovedi.");
+    return t.textContent;
+  }
+  function integratedUrlFromXml(text) {
+    var xml = new DOMParser().parseFromString(text, "application/xml");
+    var choices = xml.getElementsByTagName("choice");
+    for (var i = 0; i < choices.length; i++) {
+      var p = choices[i].getElementsByTagName("protocol")[0];
+      if (p && p.textContent === "IntegratedWindows") {
+        var loc = choices[i].getElementsByTagName("location")[0];
+        if (loc) return loc.textContent;
+      }
+    }
+    throw new Error("IntegratedWindows volba nenalezena.");
+  }
+  async function req(url, headers, body) {
+    var r = await fetch(url, {
+      method: "POST", credentials: "include",
+      headers: headers, body: body === undefined ? "" : body
+    });
+    return {
+      status: r.status,
+      wwwAuth: r.headers.get("WWW-Authenticate") || r.headers.get("www-authenticate"),
+      body: await r.text()
+    };
+  }
+
+  try {
+    // KROK 0 — bootstrap session + CsrfToken
+    var existingCsrf = getCsrf();
+    await req(BASE + PATH + "/Home/Configuration", {
+      "Accept": "application/xml, text/xml, */*; q=0.01",
+      "X-Citrix-IsUsingHTTPS": "Yes",
+      "X-Requested-With": "XMLHttpRequest",
+      "Csrf-Token": existingCsrf || "undefined"
+    });
+    var csrf = getCsrf();
+    if (!csrf) return fail("CsrfToken nebyl po bootstrapu nastaven.");
+
+    // KROK 1 — login challenge
+    var r1 = await req(LOGIN_URL, {
+      "Content-Type": "application/x-www-form-urlencoded",
+      "X-Citrix-IsUsingHTTPS": "Yes",
+      "X-Citrix-Background-Request": "True",
+      "X-Requested-With": "XMLHttpRequest",
+      "Accept": "*/*",
+      "Csrf-Token": csrf
+    });
+    if (r1.status === 403) return fail("Krok 1: HTTP 403.");
+    var loginRealm = param(r1.wwwAuth, "realm");
+    var tokenUrl = param(r1.wwwAuth, "locations");
+    if (!tokenUrl) return fail("Krok 1: chybi locations.");
+    var loginTokenBody = tokenXml(loginRealm, LOGIN_URL);
+
+    // KROK 2 — token service challenge
+    var r2 = await req(tokenUrl, {
+      "Content-Type": "application/vnd.citrix.requesttoken+xml",
+      "X-Citrix-IsUsingHTTPS": "Yes",
+      "Accept": "application/vnd.citrix.requesttokenresponse+xml, application/vnd.citrix.requesttokenchoices+xml, application/xml, text/xml"
+    }, loginTokenBody);
+    var protoRealm = param(r2.wwwAuth, "realm");
+    var protosUrl = param(r2.wwwAuth, "locations");
+    var tokenSvcUrl = param(r2.wwwAuth, "serviceroot-hint");
+    if (!protosUrl) return fail("Krok 2: chybi locations.");
+    var protoBody = tokenXml(protoRealm, tokenSvcUrl);
+
+    // KROK 3 — protocol choices
+    var r3 = await req(protosUrl, {
+      "Content-Type": "application/vnd.citrix.requesttoken+xml",
+      "X-Citrix-IsUsingHTTPS": "Yes",
+      "Accept": "application/vnd.citrix.requesttokenchoices+xml, application/xml, text/xml"
+    }, protoBody);
+    var integratedUrl = integratedUrlFromXml(r3.body);
+
+    // KROK 4 — IntegratedWindows
+    var r4 = await req(integratedUrl, {
+      "Content-Type": "application/vnd.citrix.requesttoken+xml",
+      "X-Citrix-IsUsingHTTPS": "Yes",
+      "Accept": "application/vnd.citrix.requesttokenresponse+xml, application/xml, text/xml"
+    }, protoBody);
+    if (r4.status === 401) return fail("Krok 4: 401 — Windows prihlaseni neproslo.");
+    var innerToken = tokenFromXml(r4.body);
+
+    // KROK 5 — token exchange
+    var r5 = await req(tokenUrl, {
+      "Content-Type": "application/vnd.citrix.requesttoken+xml",
+      "X-Citrix-IsUsingHTTPS": "Yes",
+      "Accept": "application/vnd.citrix.requesttokenresponse+xml, application/xml, text/xml",
+      "Authorization": "CitrixAuth " + innerToken
+    }, loginTokenBody);
+    var loginToken = tokenFromXml(r5.body);
+    var csrf6 = getCsrf();
+    if (!csrf6) return fail("Krok 6: chybi CsrfToken.");
+
+    // KROK 6 — final login
+    var r6 = await req(LOGIN_URL, {
+      "Content-Type": "application/x-www-form-urlencoded",
+      "Authorization": "CitrixAuth " + loginToken,
+      "X-Citrix-IsUsingHTTPS": "Yes",
+      "X-Citrix-Background-Request": "True",
+      "X-Requested-With": "XMLHttpRequest",
+      "Accept": "application/xml, text/xml, */*",
+      "Csrf-Token": csrf6
+    });
+    if (r6.status !== 200 || r6.body.indexOf("success") === -1)
+      return fail("Krok 6: HTTP " + r6.status);
+
+    // KROK 7 — Resources/List
+    var csrf7 = getCsrf();
+    var r7 = await req(BASE + PATH + "/Resources/List", {
+      "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
+      "X-Citrix-IsUsingHTTPS": "Yes",
+      "X-Requested-With": "XMLHttpRequest",
+      "Accept": "application/json, text/javascript, */*",
+      "Csrf-Token": csrf7
+    }, "format=json&resourceDetails=Default");
+
+    var resources = (JSON.parse(r7.body).resources) || [];
+
+    // KROK 8 (volitelný) — on-demand launch: stáhni .ica pro konkrétní appku se
+    // stejnou (čerstvou) Csrf-Token hlavičkou, dokud tahle session/iframe ještě žije.
+    if (LAUNCH_PATH) {
+      var icaUrl = BASE + PATH + "/" + LAUNCH_PATH.replace(/^\/+/, "");
+      var r8 = await fetch(icaUrl, {
+        method: "GET",
+        credentials: "include",
+        headers: {
+          "X-Citrix-IsUsingHTTPS": "Yes",
+          "Csrf-Token": csrf7,
+          "Accept": "*/*"
+        }
+      });
+      if (r8.status !== 200) return fail("Krok 8 (launch): HTTP " + r8.status);
+      var icaText = await r8.text();
+      send({ type: "citrix-sso-result", ok: true, resources: resources, ica: icaText });
+      return;
+    }
+
+    send({ type: "citrix-sso-result", ok: true, resources: resources });
+
+  } catch (e) {
+    fail(String(e && e.message ? e.message : e));
+  }
+})();
+</script>
+</body>
+</html>

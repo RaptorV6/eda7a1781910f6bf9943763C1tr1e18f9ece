@@ -2,9 +2,6 @@
 @model IndexModel
 @{
     ViewData["Title"] = Model.PanelTitle;
-    var configuredBaseUrl = string.IsNullOrWhiteSpace(Model.CitrixBaseUrl)
-        ? "Není nastaveno"
-        : Model.CitrixBaseUrl;
 }
 
 <style>
@@ -20,109 +17,6 @@
         margin-bottom: 0.25rem;
         font-size: 1.75rem;
         font-weight: 700;
-    }
-
-    .citrix-info-grid {
-        display: grid;
-        grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
-        gap: 0.75rem;
-        margin-bottom: 1.25rem;
-    }
-
-    .citrix-info-card {
-        border: 1px solid #d9e2ec;
-        background: #f8fafc;
-        border-radius: 0.65rem;
-        padding: 0.85rem 1rem;
-    }
-
-    .citrix-info-label {
-        font-size: 0.78rem;
-        text-transform: uppercase;
-        letter-spacing: 0.05em;
-        color: #52606d;
-        font-weight: 700;
-        margin-bottom: 0.35rem;
-    }
-
-    .citrix-info-value {
-        display: block;
-        font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
-        font-size: 0.9rem;
-        color: #102a43;
-        word-break: break-all;
-    }
-
-    .citrix-info-hint {
-        margin-top: 0.4rem;
-        font-size: 0.8rem;
-        color: #627d98;
-    }
-
-    .citrix-info-endpoints {
-        list-style: none;
-        margin: 0;
-        padding: 0;
-        font-size: 0.85rem;
-        color: #243b53;
-    }
-
-    .citrix-info-endpoints li {
-        margin-bottom: 0.4rem;
-        padding-left: 0.65rem;
-        border-left: 2px solid #cbd5e1;
-        word-break: break-word;
-    }
-
-    .citrix-info-endpoints li:last-child {
-        margin-bottom: 0;
-    }
-
-    .citrix-info-howto {
-        margin-bottom: 1.5rem;
-        border: 1px solid #d9e2ec;
-        border-radius: 0.65rem;
-        background: #fffbeb;
-        padding: 0.5rem 1rem;
-    }
-
-    .citrix-info-howto > summary {
-        cursor: pointer;
-        font-weight: 700;
-        color: #78350f;
-        padding: 0.5rem 0;
-        user-select: none;
-    }
-
-    .citrix-howto-body {
-        padding: 0.5rem 0 1rem;
-        font-size: 0.9rem;
-        line-height: 1.55;
-        color: #1f2937;
-    }
-
-    .citrix-howto-body h3 {
-        margin-top: 1.25rem;
-        margin-bottom: 0.5rem;
-        font-size: 1.05rem;
-        color: #0f172a;
-    }
-
-    .citrix-howto-body h3:first-child {
-        margin-top: 0.5rem;
-    }
-
-    .citrix-howto-body ol,
-    .citrix-howto-body ul {
-        margin: 0 0 0.5rem;
-        padding-left: 1.5rem;
-    }
-
-    .citrix-howto-body code {
-        background: #f1f5f9;
-        padding: 0.05rem 0.3rem;
-        border-radius: 0.3rem;
-        font-size: 0.85rem;
     }
 
     .citrix-diagnostics-status {
@@ -223,33 +117,78 @@
         margin: 0;
         padding: 0;
         display: grid;
-        gap: 0.75rem;
+        grid-template-columns: repeat(auto-fill, minmax(112px, 1fr));
+        gap: 1.5rem 1rem;
     }
 
     .citrix-app-item {
         display: flex;
+        flex-direction: column;
         align-items: center;
-        gap: 0.85rem;
-        padding: 0.85rem 1rem;
+        gap: 0.6rem;
+        padding: 0.5rem;
         border-radius: 0.85rem;
+        cursor: pointer;
+        text-align: center;
+        background: transparent;
+        transition: background-color 0.15s ease;
+    }
+
+    .citrix-app-item:hover {
+        background: #f1f5f9;
+    }
+
+    .citrix-app-icon-frame {
+        position: relative;
+        width: 72px;
+        height: 72px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
         border: 1px solid #d9e2ec;
-        background: #f8fafc;
+        border-radius: 1rem;
+        background: #ffffff;
+        box-shadow: 0 1px 3px rgba(15, 23, 42, 0.08);
+        overflow: hidden;
+    }
+
+    .citrix-app-item.is-loading .citrix-app-icon-frame {
+        opacity: 0.55;
     }
 
     .citrix-app-icon {
         width: 42px;
         height: 42px;
         object-fit: contain;
-        border-radius: 0.65rem;
-        border: 1px solid #cbd5e1;
-        background: #ffffff;
-        padding: 0.25rem;
-        flex-shrink: 0;
+    }
+
+    .citrix-app-tile-spinner {
+        position: absolute;
+        inset: 0;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        opacity: 0;
+        pointer-events: none;
+    }
+
+    .citrix-app-item.is-loading .citrix-app-tile-spinner {
+        opacity: 1;
+    }
+
+    .citrix-app-tile-spinner .citrix-spinner-dot {
+        width: 1.4rem;
+        height: 1.4rem;
+        border-width: 2px;
+        margin: 0;
     }
 
     .citrix-app-name {
+        font-size: 0.85rem;
         font-weight: 600;
         color: #102a43;
+        line-height: 1.25;
+        word-break: break-word;
     }
 
     .citrix-empty-state {
@@ -271,60 +210,6 @@
         font-size: 0.875rem;
         line-height: 1.45;
     }
-
-    .citrix-api-link-list {
-        list-style: none;
-        margin: 0.25rem 0 0.75rem;
-        padding: 0;
-    }
-
-    .citrix-api-link-list li {
-        display: flex;
-        align-items: baseline;
-        gap: 0.5rem;
-        flex-wrap: wrap;
-        padding: 0.45rem 0;
-        border-bottom: 1px solid #fde68a;
-        font-size: 0.9rem;
-        color: #1f2937;
-    }
-
-    .citrix-api-link-list li:last-child {
-        border-bottom: none;
-    }
-
-    .citrix-api-btn {
-        border: 1px solid #92400e;
-        border-radius: 0.4rem;
-        background: #fffbeb;
-        color: #92400e;
-        font-weight: 600;
-        padding: 0.3rem 0.7rem;
-        font-size: 0.85rem;
-        cursor: pointer;
-        flex-shrink: 0;
-    }
-
-    .citrix-api-btn:hover {
-        background: #fef3c7;
-    }
-
-    .citrix-api-btn:disabled {
-        opacity: 0.6;
-        cursor: wait;
-    }
-
-    .citrix-flow-steps {
-        margin: 0.25rem 0 0.5rem;
-        padding-left: 1.5rem;
-        font-size: 0.88rem;
-        line-height: 1.65;
-        color: #1f2937;
-    }
-
-    .citrix-flow-steps li {
-        margin-bottom: 0.35rem;
-    }
 </style>
 
 <div id="citrix-diagnostics-root"
@@ -341,151 +226,6 @@
     <div class="mb-3">
         <h1 class="citrix-diagnostics-title">@Model.PanelTitle</h1>
     </div>
-
-    <div class="citrix-info-grid">
-        <div class="citrix-info-card">
-            <div class="citrix-info-label">Citrix StoreFront (server-side)</div>
-            <code class="citrix-info-value">@configuredBaseUrl</code>
-            <div class="citrix-info-hint">Interní hostname pro auth a Resources/List. <code>citrixgw01</code> = NetScaler gateway (ověřeno funkční). <code>pnagent.fis.acr</code> = přímý StoreFront, doporučeno správcem pro server-side volání, zatím netestováno pro celý auth flow.</div>
-        </div>
-        <div class="citrix-info-card">
-            <div class="citrix-info-label">Public gateway (klient-side ICA)</div>
-            <code class="citrix-info-value">@(string.IsNullOrWhiteSpace(Model.PublicGatewayHost) ? "(nenastaveno)" : Model.PublicGatewayHost)</code>
-            <div class="citrix-info-hint">Hostname kam Citrix Workspace App fetchne ICA přes <code>receiver://</code>. Server-side host je interní → klient by ho neviděl, proto rewrite.</div>
-        </div>
-        <div class="citrix-info-card">
-            <div class="citrix-info-label">Backend endpointy</div>
-            <ul class="citrix-info-endpoints">
-                <li><code>POST @Model.ServerLoginEndpoint</code> — bootstrap → ExplicitForms login → Resources/List</li>
-                <li><code>POST @Model.LaunchStatusEndpoint</code> — GetLaunchStatus + rewrite fileFetchUrl na public host</li>
-                <li><code>GET @Model.ProxyEndpoint</code> — ICA + ikony stream s cached cookies (whitelist <code>Resources/*</code>)</li>
-            </ul>
-        </div>
-    </div>
-
-    <details class="citrix-info-howto">
-        <summary>Jak to funguje — vysvětlení po lopatě</summary>
-        <div class="citrix-howto-body">
-            <h3>Pro představu</h3>
-            <p>
-                Citrix StoreFront je server u nás ve firmě, na kterém jsou napojené virtualizované aplikace (GINIS, Edge, Visual Studio…). Má vlastní webovou stránku, která se ale nedá pěkně vložit do našeho portálu. Tenhle PoC je <strong>tlumočník</strong>: uživatel mluví s naším portálem česky, portál to za něj přeloží do jazyka Citrixu a zase zpět.
-            </p>
-
-            <h3>Co se děje, když se uživatel přihlásí</h3>
-            <p>
-                Uživatel napíše jméno, heslo a doménu do našeho formuláře. <strong>Naše stránka</strong> ty údaje pošle <strong>našemu serveru</strong>. Náš server pak odehrává roli "robotického prohlížeče" — projde celé Citrix přihlášení místo uživatele, nasbírá si přístupové sušenky (cookies), získá seznam aplikací co má uživatel přidělené (nejsou pro každého stejné, Citrix admin to řídí v Citrix Studio podle skupin v Active Directory) a pošle ten seznam zpět našemu webu jako 9 dlaždic.
-            </p>
-            <p>
-                <strong>Přístupové sušenky zůstávají u nás na serveru</strong>, prohlížeč uživatele je nikdy nedostane. Místo toho dostane jen náhodný kód (token), kterým se identifikuje, když chce klikat dál. Pokud by někdo prohlížeč napadl, dostane jen ten kód, ne klíče od Citrixu.
-            </p>
-
-            <h3>Co se děje, když uživatel klikne dlaždici</h3>
-            <p>
-                Klik dlaždice neznamená "spustit aplikaci tady v prohlížeči". Citrix aplikace běží na vzdáleném Citrix serveru a streamuje obraz do speciálního programu na uživatelově PC — tomu programu se říká <strong>Citrix Workspace App</strong> (musí ho mít každý, kdo chce Citrix aplikace pouštět; v korporátu typicky předinstalovaný IT-čkem).
-            </p>
-            <p>
-                Klik na dlaždici tedy spustí tento řetězec:
-            </p>
-            <ol>
-                <li>Náš portál se zeptá Citrixu: "Dej mi vstupenku pro tuhle aplikaci."</li>
-                <li>Citrix vrátí jednorázovou vstupenku platnou 30 sekund.</li>
-                <li>Náš portál tu vstupenku zabalí do speciálního odkazu ve formátu <code>receiver://...</code>. Tahle podivná schémat URL je registrované jako "rozumí jí Citrix Workspace App" — funguje stejně jako <code>mailto:</code> rozumí poštovní klient.</li>
-                <li>Prohlížeč ten odkaz předá Workspace App nainstalované na PC.</li>
-                <li>Workspace App si tu vstupenku vymění za otevřenou Citrix relaci a aplikace naběhne v jejím okně.</li>
-            </ol>
-            <p>
-                <strong>Žádný download `.ica` souboru, žádné okno se stahováním.</strong> Klik → aplikace. Stejný UX jako kdyby uživatel používal oficiální Citrix StoreFront.
-            </p>
-
-            <h3>Přesný sled HTTP kroků při přihlášení (5 kroků)</h3>
-            <p>Portál odehrává celý tok jako "robotický prohlížeč". Po odeslání formuláře se na serveru stane toto:</p>
-            <ol class="citrix-flow-steps">
-                <li><strong>Bootstrap GET</strong> <code>pnagent.fis.acr/Citrix/FISWeb/</code> s browser-like hlavičkami (bez <code>X-Requested-With</code>) → přímá odpověď <strong>200 OK</strong>, StoreFront nastaví <code>ASP.NET_SessionId</code> + <code>CsrfToken</code></li>
-                <li><strong>POST</strong> <code>/Authentication/GetAuthMethods</code> → <strong>200 XML</strong> — StoreFront vrátí dostupné metody: <code>ExplicitForms</code>, <code>IntegratedWindows</code>, <code>CitrixAuth</code></li>
-                <li><strong>POST</strong> <code>/ExplicitAuth/Login</code> → <strong>200 XML</strong> s definicí formulářových polí (jméno, heslo, doména, text tlačítka)</li>
-                <li><strong>POST</strong> <code>/ExplicitAuth/LoginAttempt</code> s <code>username</code>, <code>password</code>, <code>domain</code>, <code>loginBtn=Přihlásit</code> + aktuálním <code>Csrf-Token</code> hlavičkou → <strong>200 XML</strong> s <code>&lt;Result&gt;success&lt;/Result&gt;</code></li>
-                <li><strong>POST</strong> <code>/Resources/List</code> s <code>format=json&amp;resourceDetails=Default</code> → <strong>200 JSON</strong> se seznamem aplikací uživatele</li>
-            </ol>
-            <p>Všechny cookies zůstávají na serveru. Prohlížeč dostane jen opaque GUID (session token), pod kterým si server cookies drží 20 minut (sliding TTL).</p>
-            <p class="citrix-info-hint" style="margin-top:0.5rem">Poznámka: Dřívější konfigurace používala <code>citrixgw01.fis.acr</code> (NetScaler gateway), kde bootstrap dělal 302 → <code>/cgi/setclient?wica</code> → meta-refresh loop (3 sub-kroky navíc). <code>pnagent.fis.acr</code> je přímý StoreFront — bez NetScaler, bez redirectů.</p>
-
-            <h3>Proč jsme si byli jistí, že to funguje správně</h3>
-            <p>
-                Nejlepší kontrola: stáhli jsme vstupenku <code>.ica</code> z <strong>našeho</strong> portálu a porovnali ji s vstupenkou z <strong>oficiálního</strong> Citrix StoreFrontu pro tu samou aplikaci. Většina obsahu je jednorázová (každá vstupenka má svoje unikátní tokeny — to je správně), ale jeden konkrétní řádek <code>SessionsharingKey</code> je <strong>znak-po-znaku stejný</strong>. Tenhle klíč je deterministický kontrolní součet aplikace + serveru + konfigurace. Když se shoduje, znamená to: portál mluví se stejnou aplikací úplně stejným způsobem jako oficiální klient. Není to "podobné", je to <strong>funkčně ekvivalentní</strong>.
-            </p>
-
-            <h3>Co bylo zákeřné</h3>
-            <p>
-                Citrix neudržuje pro tenhle scénář dokumentaci. Většinu jsme museli odhalit experimentem (zachytit chování oficiálního klienta, porovnat s naším, najít rozdíl, opakovat). Pár věcí co nás zdrželo:
-            </p>
-            <ul>
-                <li>
-                    <strong>Citrix přesměrovává v cyklech, které žádný HTTP klient automaticky nezvládne.</strong> Mezi přihlášením je míchané HTTP přesměrování (rozumí mu prohlížeč) a HTML značka <code>&lt;meta refresh&gt;</code> (vypadá jako obyčejná stránka, ale ve skutečnosti přesměrovává). Museli jsme to celé odsledovat manuálně.
-                </li>
-                <li>
-                    <strong>Citrix podle hlaviček pozná, kdo se ho ptá.</strong> Když naše požadavky vypadaly jako "z aplikace", odmítl vytvořit přihlášenou relaci. Když vypadaly jako "z prohlížeče" (jiné hlavičky), všechno prošlo. Trvalo to vytušit, protože chybová hláška to nikde neříkala — vypadalo to, že náhodně padá.
-                </li>
-                <li>
-                    <strong>Tlačítko Přihlásit musí být v češtině.</strong> Citrix pole formuláře validuje proti přesnému textu na tlačítku. Když jsme posílali "Log On" (tak je to v dokumentaci), zamítl. Stačilo to změnit na "Přihlásit" a fungovalo. Tenhle StoreFront je česká instalace.
-                </li>
-                <li>
-                    <strong>Bezpečnostní token (CSRF) se po každém kroku mění.</strong> Logické cache-ování token na začátku flow všechny další kroky rozbilo, protože server čekal nový token, ne starý.
-                </li>
-                <li>
-                    <strong>Internal vs public hostname.</strong> Citrix vrátí vstupenku, která říká "stáhni si ICA z <em>interního</em> hostname". Jenže <strong>uživatelův počítač na interní adresu nedosáhne</strong> — Workspace App chodí přes <code>pnagent.fis.acr</code>. Bez přepsání hostname v naší odpovědi by se vstupenka nedala použít. Tohle nás zdrželo nejvíc — všechno fungovalo až do kliknutí, pak Workspace App tiše selhal bez chybové hlášky. Řešení: <code>appsettings.json::CitrixDiagnostics:PublicGatewayHost = pnagent.fis.acr</code> — server přepíše URL ve vstupenec před odesláním klientovi.
-                </li>
-                <li>
-                    <strong>Workspace App musí mít přidaný store.</strong> Když uživatel <code>receiver://...</code> link kliknul a Workspace App neměla náš Citrix přidaný jako "známý účet", taky tiše selhala. Po přidání store v UI Workspace App (Add Account → URL discovery) všechno fungovalo. Pro celofiremní nasazení se tohle dá pushnout přes GPO s parametrem MSI instalace.
-                </li>
-            </ul>
-
-            <h3>Co teď a co dál</h3>
-            <p>
-                <strong>Hotovo:</strong> přihlášení, výpis aplikací, ikony, klik → spuštění aplikace v Workspace App. End-to-end funkční, provoz přes <code>pnagent.fis.acr</code> (přímý StoreFront, bez NetScaler).
-            </p>
-            <p>
-                <strong>V plánu pro ostrou verzi:</strong>
-            </p>
-            <ul>
-                <li>
-                    <strong>Automatické přihlášení — dvě cesty:</strong>
-                    <ul style="margin-top:0.35rem">
-                        <li><strong>Credential storage</strong> — uživatel zadá heslo jednou, portál si ho uloží šifrovaně. Každý další příchod = tichý login na pozadí, uživatel vidí rovnou dlaždice. Funguje pro všechny uživatele (ACR i FIS).</li>
-                        <li><strong>Windows PassThrough (<code>DomainPassthroughAuth</code>)</strong> — portál na pozadí volá <code>pnagent.fis.acr/DomainPassthroughAuth/Login</code> s Windows identitou uživatele. Ten nikdy nezadá heslo. Vyžaduje Kerberos delegaci v AD (RBCD pro machine account serveru). Funguje pro FIS uživatele; ACR uživatelé potřebují změnu AD trustu.</li>
-                    </ul>
-                </li>
-                <li><strong>Refactor kódu</strong> — současný PoC má hodně logiky v jednom souboru pro přehlednost. V ostré verzi se to rozdělí do služeb, přidají se testy.</li>
-                <li><strong>Distribuovaná cache</strong> — pokud poběží portál na více serverech (load balancing), session cache musí být sdílená. Trivial fix (Redis), ale pro PoC zbytečné.</li>
-            </ul>
-        </div>
-    </details>
-
-    <details class="citrix-info-howto" id="citrix-api-tools">
-        <summary>Testovací API endpointy (klikni pro rozbalení)</summary>
-        <div class="citrix-howto-body">
-            <h3>GET endpointy — otevřou se v nové záložce</h3>
-            <ul class="citrix-api-link-list">
-                <li>
-                    <a href="/api/whoami" target="_blank" rel="noopener"><code>/api/whoami</code></a>
-                    — Windows identita serveru: jméno účtu, autentizace, impersonation level (klíčové pro SSO diagnostiku)
-                </li>
-                <li>
-                    <a href="/api/citrix-sso/test" target="_blank" rel="noopener"><code>/api/citrix-sso/test</code></a>
-                    — SSO test: zkusí Kerberos/NTLM handshake na StoreFront, vrátí impersonation level, chybový kód a cookies
-                </li>
-            </ul>
-
-            <h3>POST endpointy — výsledek se zobrazí v diagnostickém logu níže</h3>
-            <ul class="citrix-api-link-list">
-                <li>
-                    <button type="button" class="citrix-api-btn" id="btn-server-probe">▶ Spustit server probe</button>
-                    <code>POST /api/citrix-diagnostics/server-probe</code>
-                    — bootstrap GET na StoreFront ze serveru, vrátí status kódy, hlavičky, CSRF token, cookies
-                </li>
-            </ul>
-            <p class="citrix-info-hint">Login (<code>POST /api/citrix-diagnostics/explicit-login</code>) se spouští formulářem výše — není potřeba duplicitní tlačítko.</p>
-        </div>
-    </details>
 
     <div id="citrix-status" class="citrix-diagnostics-status" data-level="info"></div>
 
@@ -742,105 +482,6 @@
                 };
             };
 
-            const runServerSideProbe = async (stepName, requestUrl, requestOptions) => {
-                if (!serverProbeEndpoint) {
-                    log.warn(stepName, 'Server-side probe endpoint není nastaven.');
-                    return null;
-                }
-
-                const normalizedHeaders = {};
-                const sourceHeaders = requestOptions.headers || {};
-
-                if (sourceHeaders instanceof Headers) {
-                    sourceHeaders.forEach((value, key) => {
-                        normalizedHeaders[key] = value;
-                    });
-                } else {
-                    Object.assign(normalizedHeaders, sourceHeaders);
-                }
-
-                const bodyValue = typeof requestOptions.body === 'string'
-                    ? requestOptions.body
-                    : requestOptions.body instanceof URLSearchParams
-                        ? requestOptions.body.toString()
-                        : requestOptions.body == null
-                            ? ''
-                            : String(requestOptions.body);
-
-                log.info(stepName, `Spouštím server-side probe přes ${serverProbeEndpoint}`);
-
-                try {
-                    const response = await fetch(serverProbeEndpoint, {
-                        method: 'POST',
-                        headers: {
-                            'Content-Type': 'application/json'
-                        },
-                        body: JSON.stringify({
-                            requestId,
-                            step: stepName,
-                            storeRootUrl: normalizedBaseUrl,
-                            url: requestUrl,
-                            method: requestOptions.method || 'GET',
-                            body: bodyValue,
-                            contentType: normalizedHeaders['Content-Type'] || normalizedHeaders['content-type'] || '',
-                            headers: normalizedHeaders
-                        })
-                    });
-
-                    const probeText = await response.text();
-                    let probePayload = null;
-
-                    try {
-                        probePayload = JSON.parse(probeText);
-                    } catch (error) {
-                        log.error(stepName, `Server-side probe vrátil nevalidní JSON: ${truncate(probeText)}`);
-                        return null;
-                    }
-
-                    log.info(stepName, `Server-side probe výsledek: ${getSafeJsonPreview(probePayload)}`);
-                    return probePayload;
-                } catch (error) {
-                    log.error(stepName, `Server-side probe selhal: ${error instanceof Error ? error.message : String(error)}`);
-                    return null;
-                }
-            };
-
-            const explainServerSideProbe = (stepName, probePayload) => {
-                if (!probePayload) {
-                    return;
-                }
-
-                const bootstrapLocation = probePayload.bootstrapHeaders?.Location || probePayload.bootstrapHeaders?.location || '';
-
-                if (probePayload.bootstrapStatusCode === 302 && bootstrapLocation) {
-                    log.warn(stepName, `Bootstrap store root skončil redirectem na ${bootstrapLocation}`);
-                }
-
-                if (probePayload.bootstrapStatusCode === 302
-                    && probePayload.bootstrapCsrfTokenFound === false
-                    && Array.isArray(probePayload.bootstrapCookieNames)
-                    && probePayload.bootstrapCookieNames.length > 0) {
-                    log.warn(
-                        stepName,
-                        `Server-side probe má jen gateway cookies (${probePayload.bootstrapCookieNames.join(', ')}), ale nezískal StoreFront CsrfToken. To je nová neautentizovaná session, ne vaše browser session.`
-                    );
-                }
-
-                if (probePayload.statusCode === 404 && probePayload.bootstrapCsrfTokenFound === false) {
-                    log.warn(
-                        stepName,
-                        'HTTP 404 tady není hlavní problém. Hlavní problém je chybějící authenticated StoreFront session a CSRF token.'
-                    );
-                }
-
-                if (window.location.origin !== new URL(normalizedBaseUrl).origin) {
-                    log.warn(
-                        stepName,
-                        'CitrixComponent běží na jiném originu než Citrix StoreFront. Browser requesty proto narážejí na CORS/SameSite. Pro skutečné načtení aplikací je potřeba same-origin hostování nebo serverový login/proxy.'
-                    );
-                }
-            };
-
             const readAttributes = (xmlDocument, tagName, attributeNames) => {
                 const element = xmlDocument.getElementsByTagName(tagName)[0];
                 if (!element) {
@@ -944,6 +585,9 @@
                     listItem.style.cursor = launchPath ? 'pointer' : 'default';
                     listItem.title = launchPath ? `Spustit: ${resource.name}` : '(launchurl chybí)';
 
+                    const iconFrame = document.createElement('div');
+                    iconFrame.className = 'citrix-app-icon-frame';
+
                     const image = document.createElement('img');
                     image.className = 'citrix-app-icon';
                     image.alt = resource.name || 'Citrix aplikace';
@@ -954,45 +598,98 @@
                         log.warn('IconLoad', `Ikona se nepodařila načíst pro "${resource.name || '(bez názvu)'}": ${iconUrl || '(prázdná iconurl)'}`);
                     });
 
+                    const tileSpinner = document.createElement('span');
+                    tileSpinner.className = 'citrix-app-tile-spinner';
+                    tileSpinner.setAttribute('aria-hidden', 'true');
+                    const tileSpinnerDot = document.createElement('span');
+                    tileSpinnerDot.className = 'citrix-spinner-dot';
+                    tileSpinner.appendChild(tileSpinnerDot);
+
+                    iconFrame.appendChild(image);
+                    iconFrame.appendChild(tileSpinner);
+
                     const name = document.createElement('div');
                     name.className = 'citrix-app-name';
                     name.textContent = resource.name || '(bez názvu)';
 
                     if (launchPath) {
-                        listItem.addEventListener('click', () => {
-                            log.info('Launch', `Klik na "${resource.name}" (SSO bridge relace).`);
-                            const downloadUrl = resolveBridgeUrl(launchPath);
-                            if (!downloadUrl) {
-                                log.warn('Launch', 'Launch URL se nepodařilo sestavit.');
-                                return;
-                            }
-
-                            const launcher = document.createElement('iframe');
-                            launcher.style.display = 'none';
-                            launcher.src = downloadUrl;
-                            document.body.appendChild(launcher);
-                            setTimeout(() => { try { launcher.remove(); } catch {} }, 10000);
-                        });
+                        listItem.addEventListener('click', () => { void launchApp(resource, launchPath, listItem); });
                     }
 
-                    listItem.appendChild(image);
+                    listItem.appendChild(iconFrame);
                     listItem.appendChild(name);
                     appListElement.appendChild(listItem);
                 }
             };
 
+            // On-demand spuštění: klik na dlaždici znovu proběhne celý auth flow uvnitř
+            // skrytého bridge iframe (session z výpisu už neexistuje, byla smazána spolu
+            // s iframe), tentokrát navíc s "?launch=<launchPath>". Bridge tu appku rovnou
+            // stáhne se svým čerstvým Csrf-Token a vrátí .ica obsah přes postMessage.
+            // Spinner běží jen na té jedné dlaždici — žádný reload seznamu.
+            const launchApp = async (resource, launchPath, listItem) => {
+                if (listItem.classList.contains('is-loading')) {
+                    return;
+                }
+
+                const label = resource.name || '(bez názvu)';
+                listItem.classList.add('is-loading');
+                log.info('Launch', `Klik na "${label}" — spouštím on-demand bridge launch.`);
+
+                try {
+                    const { ica } = await runSsoBridge(launchPath);
+                    if (!ica) {
+                        throw new Error('Bridge nevrátil .ica obsah.');
+                    }
+
+                    triggerIcaLaunch(ica);
+                    log.info('Launch', `Aplikace "${label}" předána Workspace App.`);
+                } catch (error) {
+                    const msg = error instanceof Error ? error.message : String(error);
+                    log.error('Launch', `Spuštění "${label}" selhalo: ${msg}`);
+                    setStatus(`Spuštění "${label}" selhalo: ${msg}`, 'error');
+                } finally {
+                    listItem.classList.remove('is-loading');
+                }
+            };
+
+            const triggerIcaLaunch = (icaText) => {
+                // Žádný `download` atribut/Save As. Navigace skrytého iframe na blob URL
+                // necháme na prohlížeči, jak s neznámým/binárním MIME typem naloží.
+                const blob = new Blob([icaText], { type: 'application/x-ica' });
+                const blobUrl = URL.createObjectURL(blob);
+
+                const launchFrame = document.createElement('iframe');
+                launchFrame.style.display = 'none';
+                launchFrame.src = blobUrl;
+                document.body.appendChild(launchFrame);
+
+                setTimeout(() => {
+                    try { launchFrame.remove(); } catch {}
+                    URL.revokeObjectURL(blobUrl);
+                }, 10000);
+            };
+
             // Tiché SSO: celý ověřený flow běží same-origin uvnitř skrytého iframe na 07.
             // Iframe je display:none (žádný popup, žádný viditelný prvek), žije jen po dobu
             // flow a hned se z DOM odstraní. Výsledek přiletí přes postMessage.
-            const runSsoBridgeLogin = () => new Promise((resolve, reject) => {
+            // Bez "launchPath" vrátí jen seznam aplikací (login). S "launchPath" bridge navíc
+            // stáhne .ica obsah pro tu appku (on-demand launch) a vrátí ho jako "ica".
+            const runSsoBridge = (launchPath) => new Promise((resolve, reject) => {
                 if (!ssoBridgeUrl) {
                     reject(new Error('SSO bridge URL není nastavena.'));
                     return;
                 }
 
                 let bridgeOrigin;
+                let frameUrl;
                 try {
-                    bridgeOrigin = new URL(ssoBridgeUrl).origin;
+                    const url = new URL(ssoBridgeUrl);
+                    bridgeOrigin = url.origin;
+                    if (launchPath) {
+                        url.searchParams.set('launch', launchPath);
+                    }
+                    frameUrl = url.toString();
                 } catch (error) {
                     reject(new Error(`Neplatná SSO bridge URL: ${error instanceof Error ? error.message : String(error)}`));
                     return;
@@ -1027,6 +724,7 @@
                     if (event.data.ok) {
                         resolve({
                             resources: Array.isArray(event.data.resources) ? event.data.resources : [],
+                            ica: typeof event.data.ica === 'string' ? event.data.ica : '',
                             bridgeOrigin
                         });
                     } else {
@@ -1043,40 +741,9 @@
                 }, 30000);
 
                 window.addEventListener('message', onMessage);
-                frame.src = ssoBridgeUrl;
+                frame.src = frameUrl;
                 document.body.appendChild(frame);
             });
-
-            const openDiagnosticsPanel = () => {
-                const diagDetails = document.querySelector('.citrix-diagnostics-details');
-                if (diagDetails) {
-                    diagDetails.open = true;
-                }
-            };
-
-            const wireApiToolButtons = () => {
-                const serverProbeBtn = document.getElementById('btn-server-probe');
-                if (serverProbeBtn) {
-                    serverProbeBtn.addEventListener('click', async () => {
-                        if (!normalizedBaseUrl) {
-                            log.error('ServerProbe', 'BaseUrl není nastavena — probe nelze spustit.');
-                            openDiagnosticsPanel();
-                            return;
-                        }
-                        openDiagnosticsPanel();
-                        serverProbeBtn.disabled = true;
-                        try {
-                            const result = await runServerSideProbe('ServerProbe', normalizedBaseUrl, {
-                                method: 'GET',
-                                headers: {}
-                            });
-                            explainServerSideProbe('ServerProbe', result);
-                        } finally {
-                            serverProbeBtn.disabled = false;
-                        }
-                    });
-                }
-            };
 
             const run = async () => {
                 log.info('Init', 'JS init started');
@@ -1092,8 +759,6 @@
                 log.info('Init', `SSO bridge URL: ${ssoBridgeUrl || '(není nastaveno)'}`);
                 log.info('Init', `Browser origin: ${window.location.origin}`);
                 log.info('Init', `Citrix URL origin: ${normalizedBaseUrl ? new URL(normalizedBaseUrl).origin : '(není nastaveno)'}`);
-
-                wireApiToolButtons();
 
                 if (retryButtonElement) {
                     retryButtonElement.addEventListener('click', () => { void startSso(); });
@@ -1127,7 +792,7 @@
 
                 try {
                     log.info('SsoBridge', `Spouštím tiché SSO přes skrytý iframe: ${ssoBridgeUrl}`);
-                    const { resources, bridgeOrigin } = await runSsoBridgeLogin();
+                    const { resources, bridgeOrigin } = await runSsoBridge();
                     hideSpinner();
                     log.info('SsoBridge', `SSO bridge výsledek: ${resources.length} aplikací, origin=${bridgeOrigin}`);
 
